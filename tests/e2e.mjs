@@ -122,6 +122,23 @@ async function main() {
     okUpstream('tls returns grade', status, json && ['A', 'B', 'C', 'F'].includes(json.grade), JSON.stringify(json && json.grade));
     okUpstream('tls versions array', status, json && Array.isArray(json.versions));
   }
+  // tls SSRF guard — OUR logic, always checked
+  {
+    const { status } = await getJson('/api/tls?host=127.0.0.1');
+    ok('tls blocks loopback', status === 400);
+  }
+  {
+    const { status } = await getJson('/api/tls?host=10.0.0.1');
+    ok('tls blocks private range', status === 400);
+  }
+
+  // Security headers on the site's own responses
+  {
+    const res = await fetch(BASE + '/');
+    const csp = res.headers.get('content-security-policy') || '';
+    ok('CSP present with script-src self', csp.includes("script-src 'self'"), csp.slice(0, 60));
+    ok('X-Content-Type-Options nosniff', res.headers.get('x-content-type-options') === 'nosniff');
+  }
 
   // report
   const total = passed + failures.length;

@@ -45,15 +45,17 @@ function certCard(c, domain, primary) {
     s.toLowerCase().includes(domain.toLowerCase()) ? `<strong class="ok">${window.escapeHtml(s)}</strong>` : window.escapeHtml(s)
   ).join(', ');
 
+  // SANs and status/date/id cells are pre-built safe HTML; the raw crt.sh string
+  // fields (CN, issuer, serial) must be escaped — they are third-party data.
   const rows = [
     ['Status', `${badge} ${remaining >= 0 ? remaining + ' days remaining' : Math.abs(remaining) + ' days ago'}`],
-    ['Common Name', c.common_name || '—'],
+    ['Common Name', window.escapeHtml(c.common_name || '—')],
     ['SANs', sansHtml || '—'],
-    ['Issuer', c.issuer_name || '—'],
+    ['Issuer', window.escapeHtml(c.issuer_name || '—')],
     ['Valid from', notBefore.toISOString().slice(0, 10)],
     ['Valid to', notAfter.toISOString().slice(0, 10)],
-    ['Serial', c.serial_number || '—'],
-    ['crt.sh ID', c.id ? `<a href="https://crt.sh/?id=${c.id}" target="_blank" rel="noopener">${c.id}</a>` : '—'],
+    ['Serial', window.escapeHtml(c.serial_number || '—')],
+    ['crt.sh ID', c.id ? `<a href="https://crt.sh/?id=${encodeURIComponent(c.id)}" target="_blank" rel="noopener">${window.escapeHtml(String(c.id))}</a>` : '—'],
   ].map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
   return window.card(primary ? `Certificate — ${domain}` : `Historical certificate`, `<table><tbody>${rows}</tbody></table>`);
 }
@@ -62,7 +64,7 @@ function historyBlock(certs, domain) {
   if (!certs.length) return '';
   const inner = certs.map((c) => {
     const notAfter = new Date(c.not_after).toISOString().slice(0, 10);
-    return `<tr><td>${window.escapeHtml(c.common_name || '—')}</td><td>${window.escapeHtml(c.issuer_name || '—')}</td><td>${notAfter}</td><td>${c.id ? `<a href="https://crt.sh/?id=${c.id}" target="_blank" rel="noopener">${c.id}</a>` : '—'}</td></tr>`;
+    return `<tr><td>${window.escapeHtml(c.common_name || '—')}</td><td>${window.escapeHtml(c.issuer_name || '—')}</td><td>${notAfter}</td><td>${c.id ? `<a href="https://crt.sh/?id=${encodeURIComponent(c.id)}" target="_blank" rel="noopener">${window.escapeHtml(String(c.id))}</a>` : '—'}</td></tr>`;
   }).join('');
   return `<details><summary>Show ${certs.length} more recent certificate${certs.length === 1 ? '' : 's'}</summary>` +
     window.card('', `<table><thead><tr><th>Common Name</th><th>Issuer</th><th>Expires</th><th>ID</th></tr></thead><tbody>${inner}</tbody></table>`) +

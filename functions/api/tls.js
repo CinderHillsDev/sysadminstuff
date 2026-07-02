@@ -7,6 +7,7 @@
 // report what we can verify and note the limitation.
 
 import { connect } from 'cloudflare:sockets';
+import { isBlockedHost } from '../../lib/parse.mjs';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -23,12 +24,15 @@ export async function onRequest(context) {
 
   const params = new URL(request.url).searchParams;
   let host = (params.get('host') || '').trim();
-  const port = Number(params.get('port') || 443);
   if (!host) return json({ error: 'Missing host parameter.' }, 400);
   // Accept a URL and extract hostname
   try { if (/^https?:\/\//i.test(host)) host = new URL(host).hostname; } catch (e) { /* ignore */ }
   if (!/^[a-zA-Z0-9.-]+$/.test(host)) return json({ error: 'Invalid hostname.' }, 400);
-  if (!(port > 0 && port < 65536)) return json({ error: 'Invalid port.' }, 400);
+  // Only ever probe the HTTPS port. Accepting an arbitrary port would turn this
+  // into an internal port scanner; the UI only ever checks 443.
+  const port = 443;
+  // Refuse internal / reserved / loopback targets (SSRF hardening).
+  if (isBlockedHost(host)) return json({ error: 'Refusing to probe internal or reserved addresses.' }, 400);
 
   const issues = [];
   const versions = [];

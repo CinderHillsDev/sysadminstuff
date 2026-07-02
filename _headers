@@ -1,0 +1,11 @@
+# Cloudflare Pages _headers — security headers for every response.
+# CSP is the important one: script-src 'self' (no 'unsafe-inline') blocks injected
+# <script> and inline event handlers, which neutralizes DOM-XSS even if an escape
+# is ever missed. connect-src lists the only hosts the frontend fetches directly.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://cloudflare-dns.com https://crt.sh http://ip-api.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), usb=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
