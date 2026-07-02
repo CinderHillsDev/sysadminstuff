@@ -1,6 +1,6 @@
 // functions/api/whois.js — RDAP proxy (avoids CORS). No user input is ever logged.
 
-import { parseRdapDomain, parseRdapIP } from '../../lib/parse.mjs';
+import { parseRdapDomain, parseRdapIP, isBlockedHost } from '../../lib/parse.mjs';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -25,6 +25,7 @@ export async function onRequest(context) {
   if (!q) return json({ error: 'Missing query parameter q.' }, 400);
 
   const isIP = IPV4.test(q) || q.includes(':');
+  if (isIP && isBlockedHost(q)) return json({ error: 'Private or reserved addresses (RFC1918) are not publicly registered.' }, 400);
   const target = isIP
     ? `https://rdap.org/ip/${encodeURIComponent(q)}`
     : `https://rdap.org/domain/${encodeURIComponent(q)}`;

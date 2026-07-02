@@ -67,6 +67,11 @@ async function main() {
     const { status, json } = await getJson('/api/whois');
     ok('whois no-param 400', status === 400 && json && json.error);
   }
+  // whois rejects private IP (RFC1918) — OUR guard
+  {
+    const { status } = await getJson('/api/whois?q=10.0.0.1');
+    ok('whois blocks RFC1918 400', status === 400);
+  }
 
   // propagation — fans out to several live resolvers server-side
   {
@@ -101,6 +106,10 @@ async function main() {
   {
     const { status } = await getJson('/api/rbl?ip=notanip');
     ok('rbl bad ip 400', status === 400);
+  }
+  {
+    const { status } = await getJson('/api/rbl?ip=192.168.1.1');
+    ok('rbl blocks RFC1918 400', status === 400);
   }
 
   // headers — fetch a live site

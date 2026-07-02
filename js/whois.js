@@ -3,6 +3,7 @@
 async function runWhois(query, panel) {
   const q = window.hostFromInput(query);
   if (!window.isDomain(q) && !window.isIP(q)) { window.showError(panel, 'Enter a domain or IP address.'); return; }
+  if (window.isIP(q) && window.isPrivateIP(q)) { window.showError(panel, `${q} is a private/reserved address (RFC1918) — it is not publicly registered.`); return; }
   window.showLoading(panel, 'Looking up registration data…');
   try {
     const res = await fetch(`/api/whois?q=${encodeURIComponent(q)}`);

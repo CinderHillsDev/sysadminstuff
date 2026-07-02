@@ -1,6 +1,6 @@
 // functions/api/asn.js — ASN / IP details via bgpview.io. No user input is logged.
 
-import { shapeAsn, shapeAsnFromIp } from '../../lib/parse.mjs';
+import { shapeAsn, shapeAsnFromIp, isBlockedHost } from '../../lib/parse.mjs';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -21,6 +21,7 @@ export async function onRequest(context) {
   if (!q) return json({ error: 'Missing query parameter q.' }, 400);
 
   const isIP = IPV4.test(q) || q.includes(':');
+  if (isIP && isBlockedHost(q)) return json({ error: 'Private or reserved addresses (RFC1918) have no public ASN.' }, 400);
   const asnMatch = /^(as)?(\d{1,10})$/i.exec(q);
 
   try {

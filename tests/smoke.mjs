@@ -43,6 +43,24 @@ check('isDomain rejects bare tld', !core.isDomain('localhost'));
 check('isCIDR valid', core.isCIDR('10.0.0.0/8'));
 check('isCIDR rejects /33', !core.isCIDR('10.0.0.0/33'));
 check('isCIDR rejects no bits', !core.isCIDR('10.0.0.0'));
+// isPrivateIP — RFC1918 + other non-public ranges (client-side guard)
+check('private 10/8', core.isPrivateIP('10.1.2.3'));
+check('private 172.16/12 low', core.isPrivateIP('172.16.0.1'));
+check('private 172.31 high', core.isPrivateIP('172.31.255.254'));
+check('public 172.15 not private', !core.isPrivateIP('172.15.0.1'));
+check('public 172.32 not private', !core.isPrivateIP('172.32.0.1'));
+check('private 192.168/16', core.isPrivateIP('192.168.1.1'));
+check('private 127 loopback', core.isPrivateIP('127.0.0.1'));
+check('private 169.254 link-local', core.isPrivateIP('169.254.1.1'));
+check('private 100.64 CGNAT', core.isPrivateIP('100.64.0.1'));
+check('private 0.0.0.0/8', core.isPrivateIP('0.0.0.0'));
+check('private multicast 224', core.isPrivateIP('224.0.0.1'));
+check('public 8.8.8.8 not private', !core.isPrivateIP('8.8.8.8'));
+check('public 1.1.1.1 not private', !core.isPrivateIP('1.1.1.1'));
+check('private ::1 v6', core.isPrivateIP('::1'));
+check('private fd00 ULA v6', core.isPrivateIP('fd00::1'));
+check('public v6 not private', !core.isPrivateIP('2606:4700::1111'));
+
 check('isASN AS-prefixed', core.isASN('AS13335'));
 check('isASN bare', core.isASN('13335'));
 check('isASN rejects word', !core.isASN('cloudflare'));

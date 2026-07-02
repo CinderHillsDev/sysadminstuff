@@ -4,6 +4,7 @@
 async function runASN(query, panel) {
   const q = query.trim();
   if (!window.isASN(q) && !window.isIP(q)) { window.showError(panel, 'Enter an ASN (AS13335 or 13335) or an IP address.'); return; }
+  if (window.isIP(q) && window.isPrivateIP(q)) { window.showError(panel, `${q} is a private/reserved address (RFC1918) — it has no public ASN.`); return; }
   window.showLoading(panel, 'Querying bgpview.io…');
   try {
     const res = await fetch(`/api/asn?q=${encodeURIComponent(q)}`);
@@ -77,6 +78,7 @@ async function runGeo(query, panel) {
   window.showLoading(panel, 'Resolving…');
   try {
     const ip = await window.resolveToIP(window.hostFromInput(query));
+    if (window.isPrivateIP(ip)) { window.showError(panel, `${ip} is a private/reserved address (RFC1918) — it cannot be geolocated.`); return; }
     window.showLoading(panel, `Locating ${ip}…`);
     const fields = 'status,message,country,countryCode,regionName,city,isp,org,as,query,reverse';
     const res = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=${fields}`);
@@ -109,6 +111,7 @@ function countryFlag(cc) {
 async function runRDNS(query, panel) {
   const ip = query.trim();
   if (!window.isIPv4(ip)) { window.showError(panel, 'Enter an IPv4 address.'); return; }
+  if (window.isPrivateIP(ip)) { window.showError(panel, `${ip} is a private/reserved address (RFC1918) — public DNS has no PTR for it.`); return; }
   window.showLoading(panel, 'Looking up PTR…');
   try {
     const rev = ip.split('.').reverse().join('.') + '.in-addr.arpa';

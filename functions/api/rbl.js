@@ -27,6 +27,8 @@ const ZONES = [
   'db.wpbl.info',
 ];
 
+import { isBlockedHost } from '../../lib/parse.mjs';
+
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 
 async function dohA(name) {
@@ -44,6 +46,7 @@ export async function onRequest(context) {
   const m = IPV4.exec(ip);
   if (!m) return json({ error: 'Provide a valid IPv4 address as ip.' }, 400);
   if (m.slice(1).some((o) => Number(o) > 255)) return json({ error: 'Invalid IPv4 address.' }, 400);
+  if (isBlockedHost(ip)) return json({ error: 'Private or reserved addresses (RFC1918) are not tracked by blacklists.' }, 400);
 
   const reversed = ip.split('.').reverse().join('.');
 

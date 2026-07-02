@@ -29,6 +29,32 @@
     return isIPv4(ip) && Number.isInteger(b) && b >= 0 && b <= 32;
   }
   function isASN(str) { return /^(as)?\d{1,10}$/i.test((str || '').trim()); }
+  // Private / reserved / non-publicly-routable addresses. Mirrors the server-side
+  // isBlockedHost() in lib/parse.mjs. Covers RFC1918 and the other non-public
+  // IPv4 ranges, plus IPv6 loopback/ULA/link-local. Looking these up against
+  // public registries is pointless and needlessly discloses the address.
+  function isPrivateIP(ip) {
+    ip = (ip || '').trim().replace(/^\[|\]$/g, '').toLowerCase();
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+    if (m) {
+      const a = Number(m[1]), b = Number(m[2]);
+      if (a === 0) return true;                       // 0.0.0.0/8
+      if (a === 10) return true;                      // RFC1918
+      if (a === 127) return true;                     // loopback
+      if (a === 169 && b === 254) return true;        // link-local
+      if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918
+      if (a === 192 && b === 168) return true;        // RFC1918
+      if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT (RFC6598)
+      if (a >= 224) return true;                      // multicast / reserved
+      return false;
+    }
+    if (ip.includes(':')) {
+      if (ip === '::1' || ip === '::') return true;
+      if (/^f[cd][0-9a-f]{2}:/.test(ip)) return true; // fc00::/7 ULA
+      if (/^fe[89ab][0-9a-f]:/.test(ip)) return true; // fe80::/10 link-local
+    }
+    return false;
+  }
   function normalizeURL(str) {
     str = (str || '').trim();
     return /^https?:\/\//i.test(str) ? str : `https://${str}`;
@@ -164,7 +190,7 @@
   }
 
   const api = {
-    isIPv4, isIPv6, isIP, isDomain, isCIDR, isASN, isURL, normalizeURL,
+    isIPv4, isIPv6, isIP, isDomain, isCIDR, isASN, isURL, normalizeURL, isPrivateIP,
     ipToInt, intToIp, maskToBits, subnetInfo, parseCidrInput,
     b64EncodeUtf8, b64DecodeUtf8, looksLikeBase64, b64urlDecode, decodeJwtParts,
     parseSpf, SPF_QUALIFIERS, parseDmarcTags,

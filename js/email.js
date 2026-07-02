@@ -259,6 +259,7 @@ async function runRBL(query, panel) {
   window.showLoading(panel, 'Resolving target…');
   try {
     const ip = await window.resolveToIP(window.hostFromInput(query));
+    if (window.isPrivateIP(ip)) { window.showError(panel, `${ip} is a private/reserved address (RFC1918) — blacklists only track public IPs.`); return; }
     window.showLoading(panel, `Checking ${ip} against blacklists…`);
     const res = await fetch(`/api/rbl?ip=${encodeURIComponent(ip)}`);
     if (!res.ok) throw new Error(`RBL check failed (${res.status})`);
