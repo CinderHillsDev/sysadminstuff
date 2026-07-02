@@ -288,6 +288,24 @@ pre.raw {
 }
 .copy-btn:hover { color: var(--text); border-color: var(--blue); }
 
+/* Inline per-record copy button (DNS data cells) */
+.data-cell { display: flex; align-items: center; gap: 0.4rem; justify-content: space-between; }
+.data-val { word-break: break-word; }
+.copy-cell {
+  flex: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 0.15rem 0.35rem;
+  opacity: 0.6;
+}
+.copy-cell:hover { color: var(--blue); border-color: var(--blue); opacity: 1; }
+
 /* Spinner */
 .spinner {
   display: inline-block;

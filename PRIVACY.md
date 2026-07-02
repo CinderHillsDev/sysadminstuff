@@ -28,10 +28,10 @@ The page loads the JetBrains Mono font from Google Fonts, so your browser makes 
 Some tools send your query to public APIs to perform lookups:
 
 - Cloudflare DNS-over-HTTPS (DNS lookups, blacklist checks)
-- Public DNS resolvers for propagation checks: Cloudflare, Google, Quad9, DNS.SB, AliDNS, NextDNS
+- Public DNS resolvers for propagation checks (from your browser): Cloudflare, Google, DNS.SB
 - crt.sh (certificates)
 - RDAP registries (whois)
-- ip-api.com (geolocation)
+- ipwho.is (geolocation)
 - bgpview.io (ASN data)
 - Microsoft public endpoints (login.microsoftonline.com / .us, Autodiscover) for M365/Entra tenant lookup
 

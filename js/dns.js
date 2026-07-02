@@ -74,18 +74,35 @@ async function doLookup(query, panel, type) {
 function recordCard(type, rows) {
   const body = `<table><thead><tr><th>Name</th><th>TTL</th><th>Type</th><th>Data</th></tr></thead><tbody>` +
     rows.map((r) =>
-      `<tr><td>${window.escapeHtml(r.name)}</td><td>${r.TTL}</td><td>${type}</td><td>${window.escapeHtml(r.data)}</td></tr>`
+      `<tr><td>${window.escapeHtml(r.name)}</td><td>${r.TTL}</td><td>${type}</td>` +
+      `<td class="data-cell"><span class="data-val">${window.escapeHtml(r.data)}</span>` +
+      `<button class="copy-cell" data-copy="${window.escapeHtml(r.data)}" title="Copy this record">⧉</button></td></tr>`
     ).join('') + `</tbody></table>`;
   const copyText = rows.map((r) => `${r.name}\t${r.TTL}\t${type}\t${r.data}`).join('\n');
   return window.card(`${type} records`, body, copyText);
 }
 
 // ---------- Propagation ----------
-// Queried server-side via /api/propagation: most public resolvers don't support
-// the JSON DoH API or send no CORS headers, so the browser can't reach them
-// directly. The function fans out to several diverse operators for us.
+// Queried directly from the browser (no server) against the public resolvers
+// that expose a JSON DoH API with CORS. Others (Quad9, OpenDNS, AdGuard, …) don't
+// send CORS headers or need non-standard ports, so a browser can't reach them.
+const RESOLVERS = [
+  { name: 'Cloudflare', url: 'https://cloudflare-dns.com/dns-query' },
+  { name: 'Google', url: 'https://dns.google/resolve' },
+  { name: 'DNS.SB', url: 'https://doh.sb/dns-query' },
+];
 const PROP_TYPES = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME'];
 let propType = 'A';
+
+async function queryResolver(resolver, name, type) {
+  const sep = resolver.url.includes('?') ? '&' : '?';
+  const url = `${resolver.url}${sep}name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`;
+  const res = await fetch(url, { headers: { Accept: 'application/dns-json' } });
+  if (!res.ok) throw new Error(String(res.status));
+  const data = await res.json();
+  const rows = (data.Answer || []).filter((a) => typeName(a.type) === type);
+  return { answers: rows.map((a) => String(a.data)).sort(), ttl: rows[0] ? rows[0].TTL : '' };
+}
 
 async function runDNSPropagation(query, panel) {
   const isPtr = window.isIP(query);
@@ -107,27 +124,21 @@ async function runDNSPropagation(query, panel) {
 
 async function doPropagation(query, panel, type) {
   const out = panel.querySelector('#dns-prop-result');
-  window.showLoading(out, 'Querying resolvers…');
+  window.showLoading(out, `Querying ${RESOLVERS.length} resolvers…`);
   const lookupName = type === 'PTR' ? reverseInAddr(query) : query;
-  let data;
-  try {
-    const res = await fetch(`/api/propagation?name=${encodeURIComponent(lookupName)}&type=${encodeURIComponent(type)}`);
-    if (!res.ok) {
-      let msg = `Propagation check failed (${res.status})`;
-      try { const j = await res.json(); if (j.error) msg = j.error; } catch (e) { /* ignore */ }
-      throw new Error(msg);
-    }
-    data = await res.json();
-  } catch (e) {
-    window.showError(out, e.message || 'Propagation check failed.');
-    return;
-  }
 
-  const results = data.resolvers || [];
+  const results = await Promise.all(RESOLVERS.map((r) =>
+    queryResolver(r, lookupName, type)
+      .then((d) => ({ resolver: r.name, ok: true, answers: d.answers, ttl: d.ttl }))
+      .catch(() => ({ resolver: r.name, ok: false, answers: [], ttl: '' }))
+  ));
+
   const answered = results.filter((r) => r.ok && r.answers.length);
   const reference = answered.length ? answered[0].answers.join(', ') : '';
+  const signatures = new Set(answered.map((r) => r.answers.join(', ')));
+  const consistent = answered.length === results.filter((r) => r.ok).length && signatures.size === 1;
 
-  const summary = data.consistent
+  const summary = consistent && answered.length
     ? `<div class="summary green">✓ Propagated consistently across all reachable resolvers.</div>`
     : (answered.length
         ? `<div class="summary yellow">⚠ Inconsistent — record may still be propagating.</div>`

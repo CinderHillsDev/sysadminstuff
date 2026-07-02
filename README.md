@@ -13,7 +13,7 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 
 ### DNS
 - **Lookup** — A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, or ALL, via Cloudflare DNS-over-HTTPS. IP input auto-switches to reverse (PTR).
-- **Propagation** — the same record across several diverse public resolvers (Cloudflare, Google, Quad9, DNS.SB, AliDNS, NextDNS), with a consistency verdict. Runs via a Pages Function because most resolvers don't expose a browser-usable (JSON + CORS) DoH API.
+- **Propagation** — the same record across Cloudflare, Google, and DNS.SB, with a consistency verdict. Runs entirely in your browser (these are the public resolvers that expose a browser-usable JSON + CORS DoH API).
 
 ### Email
 - **SPF** — parsed mechanisms with plain-English explanations and a policy summary.
@@ -31,7 +31,7 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 ### Network
 - **ASN Lookup** — ASN or IP details and announced prefixes (bgpview.io).
 - **Subnet Calculator** — network/broadcast/mask/range/host-count. 100% in-browser.
-- **Geo** — approximate IP geolocation (ip-api.com).
+- **Geo** — approximate IP geolocation (ipwho.is).
 - **Reverse DNS** — PTR lookup with forward-confirmation.
 
 ### Cert
@@ -61,7 +61,7 @@ The only external asset loaded by the page is the JetBrains Mono font from Googl
 - [Cloudflare DNS-over-HTTPS](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/) — DNS lookups & blacklist queries
 - [crt.sh](https://crt.sh) — certificate transparency logs
 - [RDAP via rdap.org](https://rdap.org) / ARIN — whois data
-- [ip-api.com](https://ip-api.com) — IP geolocation
+- [ipwho.is](https://ipwho.is) — IP geolocation
 - [bgpview.io](https://bgpview.io) — ASN / prefix data
 - Microsoft public endpoints (login.microsoftonline.com/.us OIDC metadata, GetUserRealm, Autodiscover) — M365/Entra tenant lookup, no auth
 - DNS blacklists: Spamhaus, SpamCop, Barracuda, SORBS, UCEPROTECT, Mailspike, SpamRats, and others
@@ -99,7 +99,7 @@ node tests/e2e.mjs                  # in another (defaults to http://localhost:8
 
 Hosting is effectively free: static files are unlimited on Pages, and the Functions run on the Workers **free tier — a hard 100,000 requests/day cap that fails closed** (the API tools return errors past the limit; they never bill you). Stay on the free plan and there is no surprise-bill scenario.
 
-The real concern is abuse of the API endpoints (`/api/headers` fetches URLs, `/api/tls` opens sockets, `/api/propagation` and `/api/rbl` fan out). Two defenses:
+The real concern is abuse of the API endpoints (`/api/headers` fetches URLs, `/api/tls` opens sockets, `/api/rbl` fans out). Two defenses:
 
 1. **Code-level (already in the repo):** `functions/_middleware.js` restricts `/api/*` to read methods and rejects oversized URLs. It's stateless, so it's free and always on.
 2. **Rate limiting (set this up once, free):** In the Cloudflare dashboard for the zone → **Security → WAF → Rate limiting rules → Create rule**:
@@ -127,7 +127,7 @@ index.html            privacy.html         wrangler.toml
 css/style.css
 js/    core.js app.js dns.js email.js web.js network.js cert.js whois.js m365.js utils.js
 lib/   parse.mjs
-functions/  _middleware.js  api/  whois.js rbl.js tls.js headers.js asn.js propagation.js tenant.js
+functions/  _middleware.js  api/  whois.js rbl.js tls.js headers.js asn.js tenant.js
 tests/ smoke.mjs e2e.mjs README.md
 ```
 

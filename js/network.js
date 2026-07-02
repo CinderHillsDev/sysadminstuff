@@ -80,26 +80,24 @@ async function runGeo(query, panel) {
     const ip = await window.resolveToIP(window.hostFromInput(query));
     if (window.isPrivateIP(ip)) { window.showError(panel, `${ip} is a private/reserved address (RFC1918) — it cannot be geolocated.`); return; }
     window.showLoading(panel, `Locating ${ip}…`);
-    const fields = 'status,message,country,countryCode,regionName,city,isp,org,as,query,reverse';
-    const res = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=${fields}`);
-    if (res.status === 429) throw new Error('Rate limit reached (45 req/min). Wait a moment and try again.');
+    // ipwho.is — HTTPS + CORS, no API key, callable straight from the browser.
+    const res = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`);
     if (!res.ok) throw new Error(`Geo lookup failed (${res.status})`);
     const d = await res.json();
-    if (d.status !== 'success') throw new Error(d.message || 'Geo lookup failed.');
-    const flag = d.countryCode ? countryFlag(d.countryCode) : '';
+    if (d.success === false) throw new Error(d.message || 'Geolocation not available for this IP.');
+    const conn = d.connection || {};
+    const flag = (d.flag && d.flag.emoji) || (d.country_code ? countryFlag(d.country_code) : '');
     const rows = [
-      ['IP', d.query], ['Country', `${flag} ${d.country || ''} (${d.countryCode || ''})`],
-      ['Region', d.regionName], ['City', d.city], ['ISP', d.isp], ['Org', d.org], ['ASN', d.as], ['Reverse DNS', d.reverse],
+      ['IP', d.ip], ['Country', `${flag} ${d.country || ''} (${d.country_code || ''})`.trim()],
+      ['Region', d.region], ['City', d.city],
+      ['ISP', conn.isp], ['Org', conn.org], ['ASN', conn.asn ? `AS${conn.asn}` : ''],
+      ['Timezone', d.timezone && d.timezone.id],
     ].filter(([, v]) => v).map(([k, v]) => `<tr><td>${k}</td><td>${window.escapeHtml(v)}</td></tr>`).join('');
     panel.innerHTML =
-      `<div class="note">Geolocation is approximate.</div>` +
+      `<div class="note">Geolocation is approximate. Data from ipwho.is.</div>` +
       window.card(`Geolocation — ${ip}`, `<table><tbody>${rows}</tbody></table>`);
   } catch (e) {
-    if (/Failed to fetch|NetworkError|Load failed/i.test(e.message)) {
-      window.showError(panel, 'ip-api.com only serves HTTP on its free tier, which browsers block from an HTTPS page. Try it directly at https://ip-api.com, or use a paid HTTPS endpoint.');
-    } else {
-      window.showError(panel, e.message || 'Geo lookup failed.');
-    }
+    window.showError(panel, e.message || 'Geo lookup failed.');
   }
 }
 function countryFlag(cc) {

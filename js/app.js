@@ -88,11 +88,11 @@ function card(title, bodyHtml, copyText) {
 }
 
 function wireCopyButtons(root) {
-  root.querySelectorAll('.copy-btn[data-copy]').forEach((btn) => {
+  root.querySelectorAll('[data-copy]').forEach((btn) => {
     btn.addEventListener('click', () => {
       copyToClipboard(btn.getAttribute('data-copy'));
       const orig = btn.textContent;
-      btn.textContent = 'copied';
+      btn.textContent = btn.classList.contains('copy-cell') ? '✓' : 'copied';
       setTimeout(() => { btn.textContent = orig; }, 1200);
     });
   });
