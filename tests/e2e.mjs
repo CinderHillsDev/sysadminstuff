@@ -100,8 +100,12 @@ async function main() {
     okUpstream('tenant irs.gov is GCC', status, json && json.environment === 'GCC', JSON.stringify(json && json.environment));
   }
   {
-    const { status, json } = await getJson('/api/tenant?domain=sierraspace.com');
-    okUpstream('tenant sierraspace.com is GCC High', status, json && json.environment === 'GCC High', JSON.stringify(json && json.environment));
+    const { status, json } = await getJson('/api/tenant?domain=lmco.com');
+    okUpstream('tenant lmco.com is GCC High', status, json && json.environment === 'GCC High', JSON.stringify(json && json.environment));
+  }
+  {
+    const { status, json } = await getJson('/api/tenant?domain=army.mil');
+    okUpstream('tenant army.mil is DoD', status, json && json.environment === 'DoD', JSON.stringify(json && json.environment));
   }
   {
     const { status } = await getJson('/api/tenant?domain=notadomain'); // no dot -> invalid
