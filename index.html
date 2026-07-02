@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>sysadminstuff.net — clean sysadmin tools</title>
+  <meta name="description" content="Clean, ad-free sysadmin tools: DNS, email auth, TLS, whois, certs, network, and utilities. No logs. No tracking. No ads." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%E2%8C%A8%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <header>
+    <h1>sysadminstuff.net</h1>
+    <p>Clean sysadmin tools. No ads, no fluff.</p>
+  </header>
+
+  <main>
+    <div class="input-bar" id="input-bar">
+      <input id="query" type="text" placeholder="domain, hostname, or IP address" autofocus autocomplete="off" spellcheck="false" />
+      <button id="run-btn">Run</button>
+    </div>
+    <div id="input-error" class="input-error" hidden></div>
+
+    <nav class="tabs primary" id="primary-tabs">
+      <button class="tab active" data-tab="dns">DNS</button>
+      <button class="tab" data-tab="email">Email</button>
+      <button class="tab" data-tab="web">Web</button>
+      <button class="tab" data-tab="network">Network</button>
+      <button class="tab" data-tab="cert">Cert</button>
+      <button class="tab" data-tab="whois">Whois</button>
+      <button class="tab" data-tab="utils">Utils</button>
+    </nav>
+
+    <!-- DNS -->
+    <div id="tab-dns" class="tab-panel active">
+      <nav class="tabs secondary">
+        <button class="subtab active" data-subtab="lookup" data-tip="Query DNS records of any type via Cloudflare DoH">Lookup</button>
+        <button class="subtab" data-subtab="propagation" data-tip="Compare a record across 5 public resolvers to check propagation">Propagation</button>
+      </nav>
+      <div class="subpanel active" id="panel-dns-lookup"></div>
+      <div class="subpanel" id="panel-dns-propagation"></div>
+    </div>
+
+    <!-- Email -->
+    <div id="tab-email" class="tab-panel">
+      <nav class="tabs secondary">
+        <button class="subtab active" data-subtab="spf" data-tip="Inspect and explain the SPF record">SPF</button>
+        <button class="subtab" data-subtab="dmarc" data-tip="Inspect and explain the DMARC policy">DMARC</button>
+        <button class="subtab" data-subtab="dkim" data-tip="Look up a DKIM key by selector">DKIM</button>
+        <button class="subtab" data-subtab="mx" data-tip="MX hosts with IPs and PTR match check">MX</button>
+        <button class="subtab" data-subtab="headers" data-tip="Paste raw email headers to trace the routing path">Header Analyzer</button>
+        <button class="subtab" data-subtab="rbl" data-tip="Check an IP against 15 DNS blacklists">Blacklist</button>
+      </nav>
+      <div class="subpanel active" id="panel-email-spf"></div>
+      <div class="subpanel" id="panel-email-dmarc"></div>
+      <div class="subpanel" id="panel-email-dkim"></div>
+      <div class="subpanel" id="panel-email-mx"></div>
+      <div class="subpanel" id="panel-email-headers"></div>
+      <div class="subpanel" id="panel-email-rbl"></div>
+    </div>
+
+    <!-- Web -->
+    <div id="tab-web" class="tab-panel">
+      <nav class="tabs secondary">
+        <button class="subtab active" data-subtab="httpheaders" data-tip="Response headers + security header scorecard">HTTP Headers</button>
+        <button class="subtab" data-subtab="redirects" data-tip="Trace the full redirect chain hop by hop">Redirects</button>
+        <button class="subtab" data-subtab="tls" data-tip="Grade TLS versions and ciphers for a host">TLS Grade</button>
+      </nav>
+      <div class="subpanel active" id="panel-web-httpheaders"></div>
+      <div class="subpanel" id="panel-web-redirects"></div>
+      <div class="subpanel" id="panel-web-tls"></div>
+    </div>
+
+    <!-- Network -->
+    <div id="tab-network" class="tab-panel">
+      <nav class="tabs secondary">
+        <button class="subtab active" data-subtab="asn" data-tip="ASN or IP details via bgpview.io">ASN Lookup</button>
+        <button class="subtab" data-subtab="subnet" data-tip="Subnet math — runs entirely in your browser">Subnet Calculator</button>
+        <button class="subtab" data-subtab="geo" data-tip="Approximate IP geolocation">Geo</button>
+        <button class="subtab" data-subtab="rdns" data-tip="PTR lookup with forward-confirmation">Reverse DNS</button>
+      </nav>
+      <div class="subpanel active" id="panel-network-asn"></div>
+      <div class="subpanel" id="panel-network-subnet"></div>
+      <div class="subpanel" id="panel-network-geo"></div>
+      <div class="subpanel" id="panel-network-rdns"></div>
+    </div>
+
+    <!-- Cert -->
+    <div id="tab-cert" class="tab-panel">
+      <div class="subpanel active" id="panel-cert-main"></div>
+    </div>
+
+    <!-- Whois -->
+    <div id="tab-whois" class="tab-panel">
+      <div class="subpanel active" id="panel-whois-main"></div>
+    </div>
+
+    <!-- Utils — each tool is self-contained, no shared input bar -->
+    <div id="tab-utils" class="tab-panel">
+      <nav class="tabs secondary">
+        <button class="subtab active" data-subtab="base64" data-tip="Base64 encode/decode in your browser">Base64</button>
+        <button class="subtab" data-subtab="urlencode" data-tip="URL encode/decode in your browser">URL Encode</button>
+        <button class="subtab" data-subtab="jwt" data-tip="Decode a JWT locally — never sent anywhere">JWT Decoder</button>
+      </nav>
+      <div class="subpanel active" id="panel-utils-base64"></div>
+      <div class="subpanel" id="panel-utils-urlencode"></div>
+      <div class="subpanel" id="panel-utils-jwt"></div>
+    </div>
+  </main>
+
+  <footer>
+    No logs. No tracking. No ads. Queries are not stored or recorded.
+    <a href="/privacy">Privacy</a> ·
+    Source available · <a href="https://github.com/chrismuench/sysadminstuff">GitHub</a>
+  </footer>
+
+  <script src="/js/core.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/dns.js"></script>
+  <script src="/js/email.js"></script>
+  <script src="/js/web.js"></script>
+  <script src="/js/network.js"></script>
+  <script src="/js/cert.js"></script>
+  <script src="/js/whois.js"></script>
+  <script src="/js/utils.js"></script>
+</body>
+</html>

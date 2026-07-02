@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy — sysadminstuff.net</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Privacy</h1>
+    <p><a href="/">← back to sysadminstuff.net</a></p>
+  </header>
+  <main>
+    <div class="card">
+      <h3>The short version</h3>
+      <p>sysadminstuff.net does not log, store, or track your queries. No analytics. No cookies. No ads.</p>
+    </div>
+
+    <div class="card">
+      <h3>What we collect</h3>
+      <p>Nothing. The queries you run are not logged or stored by us. Our server-side functions are written to never log query parameters, request URLs, or client IP addresses.</p>
+    </div>
+
+    <div class="card">
+      <h3>Hosting (Cloudflare)</h3>
+      <p>The site is hosted on Cloudflare Pages. As the hosting provider, Cloudflare may collect standard infrastructure metrics (request counts, error rates). We do not have access to your query content, and we do not enable Cloudflare Web Analytics.</p>
+    </div>
+
+    <div class="card">
+      <h3>Google Fonts</h3>
+      <p>We load the JetBrains Mono font from Google Fonts, which means your browser makes a request to Google for the font files. To avoid this entirely, the font can be self-hosted — see the instructions in the project README.</p>
+    </div>
+
+    <div class="card">
+      <h3>Third-party APIs</h3>
+      <p>To perform lookups, some tools send your query to public APIs — Cloudflare DNS-over-HTTPS, crt.sh, RDAP registries, ip-api.com, and bgpview.io. This is inherent to how those lookups work. Each of those services has its own privacy policy. We do not forward your IP address to these services where it can be avoided.</p>
+    </div>
+
+    <div class="card">
+      <h3>Fully local tools</h3>
+      <p>The JWT Decoder, Base64, URL Encode, and Subnet Calculator run entirely in your browser. Nothing you type into them is ever transmitted anywhere.</p>
+    </div>
+
+    <div class="card">
+      <h3>Cookies &amp; storage</h3>
+      <p>No cookies are set. No localStorage or sessionStorage is used for anything beyond basic UI state. There is no tracking of any kind.</p>
+    </div>
+
+    <div class="card">
+      <h3>Questions</h3>
+      <p>Open an issue on <a href="https://github.com/chrismuench/sysadminstuff" rel="noopener">GitHub</a>.</p>
+    </div>
+  </main>
+  <footer>
+    No logs. No tracking. No ads. · <a href="/">Home</a> · Source available · <a href="https://github.com/chrismuench/sysadminstuff">GitHub</a>
+  </footer>
+</body>
+</html>

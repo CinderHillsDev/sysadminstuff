@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Smoke tests (pure logic)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run smoke tests
+        run: node tests/smoke.mjs
+
+  e2e:
+    name: E2E (wrangler pages dev)
+    runs-on: ubuntu-latest
+    # Hits live third-party APIs — flakiness upstream shouldn't fail the build.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Start Pages dev server
+        run: |
+          npx --yes wrangler@3 pages dev . --port 8788 --ip 127.0.0.1 > wrangler.log 2>&1 &
+          echo "WRANGLER_PID=$!" >> "$GITHUB_ENV"
+      - name: Wait for server
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8788/ >/dev/null 2>&1; then
+              echo "server up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not start; log:"; cat wrangler.log; exit 1
+      - name: Run e2e tests
+        env:
+          BASE_URL: http://127.0.0.1:8788
+        run: node tests/e2e.mjs
+      - name: Wrangler log (on failure)
+        if: failure()
+        run: cat wrangler.log
