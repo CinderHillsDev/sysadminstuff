@@ -185,8 +185,19 @@ check('ssrf blocks 10.x', parse.isBlockedHost('10.1.2.3'));
 check('ssrf blocks 192.168', parse.isBlockedHost('192.168.1.1'));
 check('ssrf blocks 169.254 metadata', parse.isBlockedHost('169.254.169.254'));
 check('ssrf blocks 172.16', parse.isBlockedHost('172.16.0.1'));
+check('ssrf blocks 0.0.0.0/8', parse.isBlockedHost('0.1.2.3'));
 check('ssrf allows public', !parse.isBlockedHost('example.com'));
 check('ssrf allows 8.8.8.8', !parse.isBlockedHost('8.8.8.8'));
+// IPv6 coverage (finding #4)
+check('ssrf blocks ::1', parse.isBlockedHost('::1'));
+check('ssrf blocks [::1] bracketed', parse.isBlockedHost('[::1]'));
+check('ssrf blocks unspecified ::', parse.isBlockedHost('::'));
+check('ssrf blocks ULA fd00::', parse.isBlockedHost('fd00::1'));
+check('ssrf blocks link-local fe80::', parse.isBlockedHost('fe80::1'));
+check('ssrf blocks v4-mapped metadata', parse.isBlockedHost('[::ffff:169.254.169.254]'));
+check('ssrf blocks v4-mapped private', parse.isBlockedHost('::ffff:10.0.0.1'));
+check('ssrf blocks v4-mapped hex metadata', parse.isBlockedHost('::ffff:a9fe:a9fe'));
+check('ssrf allows public v6', !parse.isBlockedHost('2606:4700::1111'));
 
 // ---- report ----
 const total = passed + failures.length;

@@ -85,7 +85,8 @@ async function runTLS(query, panel) {
       throw new Error(msg);
     }
     const data = await res.json();
-    const grade = data.grade || 'F';
+    // Constrain the grade to the known set — it's used unescaped in a class + text.
+    const grade = ['A', 'B', 'C', 'F'].includes(data.grade) ? data.grade : 'F';
     const versions = data.versions || [];
     const verRows = versions.map((v) =>
       `<tr><td>${window.escapeHtml(v.version)}</td><td>${v.supported ? '<span class="ok">✓ supported</span>' : '<span class="muted">✗</span>'}</td><td>${window.escapeHtml(v.cipher || '—')}</td></tr>`

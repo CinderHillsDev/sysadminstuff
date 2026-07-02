@@ -127,8 +127,9 @@ async function doDKIM(domain, panel) {
       ['v', tags.v || 'DKIM1', 'Version'],
       ['k', tags.k || 'rsa', 'Key type'],
       ['t', tags.t || '—', tags.t ? 'Flags' : 'No flags'],
-      ['p', tags.p ? `${window.escapeHtml(tags.p.slice(0, 32))}… (${bits})` : '(empty — key revoked)', 'Public key'],
-    ].map(([k, v, d]) => `<tr><td>${k}</td><td>${v}</td><td>${window.escapeHtml(d)}</td></tr>`).join('');
+      // Values come straight from a DKIM TXT record — escape every one uniformly.
+      ['p', tags.p ? `${tags.p.slice(0, 32)}… (${bits})` : '(empty — key revoked)', 'Public key'],
+    ].map(([k, v, d]) => `<tr><td>${window.escapeHtml(k)}</td><td>${window.escapeHtml(String(v))}</td><td>${window.escapeHtml(d)}</td></tr>`).join('');
     const warn = /(^|;|,|\s)t=y/i.test('t=' + (tags.t || ''))
       ? `<div class="summary yellow">Testing mode (t=y) — DKIM failures won't affect delivery.</div>` : '';
     out.innerHTML =
