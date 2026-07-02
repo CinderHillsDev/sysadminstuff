@@ -13,7 +13,7 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 
 ### DNS
 - **Lookup** — A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, or ALL, via Cloudflare DNS-over-HTTPS. IP input auto-switches to reverse (PTR).
-- **Propagation** — the same record across Cloudflare, Google, OpenDNS, Quad9, and AdGuard, with a consistency verdict.
+- **Propagation** — the same record across several diverse public resolvers (Cloudflare, Google, Quad9, DNS.SB, AliDNS, NextDNS), with a consistency verdict. Runs via a Pages Function because most resolvers don't expose a browser-usable (JSON + CORS) DoH API.
 
 ### Email
 - **SPF** — parsed mechanisms with plain-English explanations and a policy summary.
@@ -91,6 +91,20 @@ node tests/e2e.mjs                  # in another (defaults to http://localhost:8
 
 ---
 
+## Abuse protection & cost
+
+Hosting is effectively free: static files are unlimited on Pages, and the Functions run on the Workers **free tier — a hard 100,000 requests/day cap that fails closed** (the API tools return errors past the limit; they never bill you). Stay on the free plan and there is no surprise-bill scenario.
+
+The real concern is abuse of the API endpoints (`/api/headers` fetches URLs, `/api/tls` opens sockets, `/api/propagation` and `/api/rbl` fan out). Two defenses:
+
+1. **Code-level (already in the repo):** `functions/_middleware.js` restricts `/api/*` to read methods and rejects oversized URLs. It's stateless, so it's free and always on.
+2. **Rate limiting (set this up once, free):** In the Cloudflare dashboard for the zone → **Security → WAF → Rate limiting rules → Create rule**:
+   - **If incoming requests match:** `URI Path` `contains` `/api/`
+   - **Rate:** `20` requests per `10` seconds, counting by client IP
+   - **Action:** Block (or Managed Challenge) for `60` seconds
+
+   The free plan includes one rate-limiting rule — this is a good use of it. Adjust the numbers to taste; 20/10s is generous for a human but stops a script hammering your quota.
+
 ## Deploy (Cloudflare Pages)
 
 1. Push this repo to GitHub.
@@ -107,8 +121,9 @@ node tests/e2e.mjs                  # in another (defaults to http://localhost:8
 ```
 index.html            privacy.html         wrangler.toml
 css/style.css
-js/    app.js dns.js email.js web.js network.js cert.js whois.js utils.js
-functions/api/  whois.js rbl.js tls.js headers.js asn.js
+js/    core.js app.js dns.js email.js web.js network.js cert.js whois.js utils.js
+lib/   parse.mjs
+functions/  _middleware.js  api/  whois.js rbl.js tls.js headers.js asn.js propagation.js
 tests/ smoke.mjs e2e.mjs README.md
 ```
 

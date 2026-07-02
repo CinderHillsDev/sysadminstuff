@@ -26,11 +26,16 @@ async function runWhois(query, panel) {
       rows = [
         ['Registrar', d.registrar], ['Status', (d.status || []).join ? (d.status || []).join(', ') : d.status],
         ['Created', d.created], ['Updated', d.updated], ['Expires', d.expires],
-        ['Name servers', (d.nameservers || []).join ? (d.nameservers || []).join('<br>') : d.nameservers],
+        // Keep as an array so each name server is escaped, then joined with <br>.
+        ['Name servers', d.nameservers || []],
         ['DNSSEC', d.dnssec],
       ];
     }
-    const body = rows.filter(([, v]) => v && v.length).map(([k, v]) => `<tr><td>${k}</td><td>${window.escapeHtml(v)}</td></tr>`).join('');
+    // Array values render one-per-line (each element escaped); scalars are escaped as-is.
+    const cell = (v) => Array.isArray(v)
+      ? v.map((x) => window.escapeHtml(x)).join('<br>')
+      : window.escapeHtml(v);
+    const body = rows.filter(([, v]) => v && v.length).map(([k, v]) => `<tr><td>${k}</td><td>${cell(v)}</td></tr>`).join('');
     if (!body) {
       panel.innerHTML = `<div class="summary grey">No registration data returned. Try <a href="https://lookup.icann.org/en/lookup?name=${encodeURIComponent(q)}" target="_blank" rel="noopener">lookup.icann.org</a>.</div>`;
       return;

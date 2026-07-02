@@ -81,13 +81,9 @@ function recordCard(type, rows) {
 }
 
 // ---------- Propagation ----------
-const RESOLVERS = [
-  { name: 'Cloudflare', url: 'https://cloudflare-dns.com/dns-query' },
-  { name: 'Google', url: 'https://dns.google/resolve' },
-  { name: 'OpenDNS', url: 'https://doh.opendns.com/dns-query' },
-  { name: 'Quad9', url: 'https://dns.quad9.net/dns-query' },
-  { name: 'AdGuard', url: 'https://dns.adguard.com/dns-query' },
-];
+// Queried server-side via /api/propagation: most public resolvers don't support
+// the JSON DoH API or send no CORS headers, so the browser can't reach them
+// directly. The function fans out to several diverse operators for us.
 const PROP_TYPES = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME'];
 let propType = 'A';
 
@@ -109,40 +105,42 @@ async function runDNSPropagation(query, panel) {
   await doPropagation(query, panel, t);
 }
 
-async function queryResolver(resolver, name, type) {
-  const sep = resolver.url.includes('?') ? '&' : '?';
-  const url = `${resolver.url}${sep}name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`;
-  const res = await fetch(url, { headers: { Accept: 'application/dns-json' } });
-  if (!res.ok) throw new Error(String(res.status));
-  return res.json();
-}
-
 async function doPropagation(query, panel, type) {
   const out = panel.querySelector('#dns-prop-result');
-  window.showLoading(out, `Querying ${RESOLVERS.length} resolvers…`);
+  window.showLoading(out, 'Querying resolvers…');
   const lookupName = type === 'PTR' ? reverseInAddr(query) : query;
-  const results = await Promise.all(RESOLVERS.map((r) =>
-    queryResolver(r, lookupName, type)
-      .then((d) => {
-        const rows = (d.Answer || []).filter((a) => typeName(a.type) === type);
-        return { resolver: r.name, ok: true, answers: rows.map((a) => a.data).sort(), ttl: rows[0] ? rows[0].TTL : '' };
-      })
-      .catch(() => ({ resolver: r.name, ok: false, answers: [], ttl: '' }))
-  ));
+  let data;
+  try {
+    const res = await fetch(`/api/propagation?name=${encodeURIComponent(lookupName)}&type=${encodeURIComponent(type)}`);
+    if (!res.ok) {
+      let msg = `Propagation check failed (${res.status})`;
+      try { const j = await res.json(); if (j.error) msg = j.error; } catch (e) { /* ignore */ }
+      throw new Error(msg);
+    }
+    data = await res.json();
+  } catch (e) {
+    window.showError(out, e.message || 'Propagation check failed.');
+    return;
+  }
 
-  const signatures = results.filter((r) => r.ok).map((r) => r.answers.join(', '));
-  const uniq = new Set(signatures.filter((s) => s !== ''));
-  const consistent = uniq.size <= 1 && signatures.some((s) => s !== '');
+  const results = data.resolvers || [];
+  const answered = results.filter((r) => r.ok && r.answers.length);
+  const reference = answered.length ? answered[0].answers.join(', ') : '';
 
-  const summary = consistent
-    ? `<div class="summary green">✓ Propagated consistently across all resolvers.</div>`
-    : `<div class="summary yellow">⚠ Inconsistent — record may still be propagating.</div>`;
+  const summary = data.consistent
+    ? `<div class="summary green">✓ Propagated consistently across all reachable resolvers.</div>`
+    : (answered.length
+        ? `<div class="summary yellow">⚠ Inconsistent — record may still be propagating.</div>`
+        : `<div class="summary grey">No ${type} records returned by any resolver.</div>`);
 
   const rowsHtml = results.map((r) => {
-    const answer = r.ok ? (r.answers.join('<br>') || '<span class="muted">— empty —</span>') : '<span class="err">unreachable</span>';
-    const status = !r.ok ? '<span class="err">error</span>'
-      : (r.answers.join(', ') === (signatures.find((s) => s !== '') || '') ? '<span class="ok">match</span>' : '<span class="warn">differs</span>');
-    return `<tr><td>${r.resolver}</td><td>${answer}</td><td>${r.ttl}</td><td>${status}</td></tr>`;
+    const answer = !r.ok ? '<span class="err">unreachable</span>'
+      : (r.answers.map((x) => window.escapeHtml(x)).join('<br>') || '<span class="muted">— empty —</span>');
+    let status;
+    if (!r.ok) status = '<span class="err">error</span>';
+    else if (!r.answers.length) status = '<span class="muted">no record</span>';
+    else status = r.answers.join(', ') === reference ? '<span class="ok">match</span>' : '<span class="warn">differs</span>';
+    return `<tr><td>${window.escapeHtml(r.resolver)}</td><td>${answer}</td><td>${window.escapeHtml(String(r.ttl || ''))}</td><td>${status}</td></tr>`;
   }).join('');
 
   const table = `<table><thead><tr><th>Resolver</th><th>Answer</th><th>TTL</th><th>Status</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;

@@ -27,7 +27,8 @@ The page loads the JetBrains Mono font from Google Fonts, so your browser makes 
 
 Some tools send your query to public APIs to perform lookups:
 
-- Cloudflare DNS-over-HTTPS (DNS, blacklist checks)
+- Cloudflare DNS-over-HTTPS (DNS lookups, blacklist checks)
+- Public DNS resolvers for propagation checks: Cloudflare, Google, Quad9, DNS.SB, AliDNS, NextDNS
 - crt.sh (certificates)
 - RDAP registries (whois)
 - ip-api.com (geolocation)

@@ -167,7 +167,7 @@ async function runMX(query, panel) {
     }));
 
     const body = rows.map((m) => {
-      const ipCell = m.ips.length ? m.ips.join('<br>') : '<span class="muted">—</span>';
+      const ipCell = m.ips.length ? m.ips.map((x) => window.escapeHtml(x)).join('<br>') : '<span class="muted">—</span>';
       const ptrCell = m.ptrs.length ? m.ptrs.map((p) => window.escapeHtml(p.ptr || '—')).join('<br>') : '<span class="muted">—</span>';
       // PTR "match" = PTR hostname points back toward the MX host domain
       const match = m.ptrs.length && m.ptrs.every((p) => p.ptr) ? '<span class="ok">✓</span>' : '<span class="warn">✗</span>';

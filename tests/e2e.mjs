@@ -68,6 +68,21 @@ async function main() {
     ok('whois no-param 400', status === 400 && json && json.error);
   }
 
+  // propagation — fans out to several live resolvers server-side
+  {
+    const { status, json } = await getJson('/api/propagation?name=example.com&type=A');
+    ok('propagation 200', status === 200, `status ${status}`);
+    ok('propagation returns resolvers array', json && Array.isArray(json.resolvers) && json.resolvers.length >= 2);
+    // Cloudflare + Google are reliable everywhere; at least one must answer, or the feature is broken.
+    const answered = (json && json.resolvers || []).filter((r) => r.ok && r.answers && r.answers.length);
+    ok('propagation: >=1 resolver returned an A record', answered.length >= 1,
+      `answered=${answered.length} of ${(json && json.resolvers || []).length}`);
+  }
+  {
+    const { status } = await getJson('/api/propagation?type=A'); // missing name
+    ok('propagation no-name 400', status === 400);
+  }
+
   // asn (live bgpview.io)
   {
     const { status, json } = await getJson('/api/asn?q=AS13335');
