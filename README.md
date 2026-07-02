@@ -1,6 +1,6 @@
 # sysadminstuff.net
 
-[![CI](https://github.com/chrismuench/sysadminstuff/actions/workflows/ci.yml/badge.svg)](https://github.com/chrismuench/sysadminstuff/actions/workflows/ci.yml)
+[![CI](https://github.com/CinderHillsDev/sysadminstuff/actions/workflows/ci.yml/badge.svg)](https://github.com/CinderHillsDev/sysadminstuff/actions/workflows/ci.yml)
 [![License: Apache-2.0 + Commons Clause](https://img.shields.io/badge/license-Apache--2.0%20%2B%20Commons%20Clause-blue)](LICENSE)
 
 Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, whois, network, and everyday utilities. Pure HTML/CSS/JS on the frontend with a handful of Cloudflare Pages Functions for the lookups that need a server. **No logs. No tracking. No ads.**
