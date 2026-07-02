@@ -40,6 +40,9 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 ### Whois
 - RDAP-based whois for domains and IPs.
 
+### M365
+- **Microsoft 365 / Entra tenant lookup** — given a domain, resolves the tenant ID (GUID), brand name, and Managed vs. Federated (ADFS) identity, and classifies the **cloud environment: Commercial / GCC / GCC High / DoD** (via OpenID Connect metadata `tenant_region_sub_scope` + cloud instance). Also lists other domains in the tenant. Uses only public, unauthenticated Microsoft endpoints — no login required.
+
 ### Utils (all client-side, zero network)
 - **Base64**, **URL Encode**, **JWT Decoder** — nothing you type leaves your browser.
 
@@ -60,6 +63,7 @@ The only external asset loaded by the page is the JetBrains Mono font from Googl
 - [RDAP via rdap.org](https://rdap.org) / ARIN — whois data
 - [ip-api.com](https://ip-api.com) — IP geolocation
 - [bgpview.io](https://bgpview.io) — ASN / prefix data
+- Microsoft public endpoints (login.microsoftonline.com/.us OIDC metadata, GetUserRealm, Autodiscover) — M365/Entra tenant lookup, no auth
 - DNS blacklists: Spamhaus, SpamCop, Barracuda, SORBS, UCEPROTECT, Mailspike, SpamRats, and others
 
 ---
@@ -121,9 +125,9 @@ The real concern is abuse of the API endpoints (`/api/headers` fetches URLs, `/a
 ```
 index.html            privacy.html         wrangler.toml
 css/style.css
-js/    core.js app.js dns.js email.js web.js network.js cert.js whois.js utils.js
+js/    core.js app.js dns.js email.js web.js network.js cert.js whois.js m365.js utils.js
 lib/   parse.mjs
-functions/  _middleware.js  api/  whois.js rbl.js tls.js headers.js asn.js propagation.js
+functions/  _middleware.js  api/  whois.js rbl.js tls.js headers.js asn.js propagation.js tenant.js
 tests/ smoke.mjs e2e.mjs README.md
 ```
 

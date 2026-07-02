@@ -88,6 +88,31 @@ async function main() {
     ok('propagation no-name 400', status === 400);
   }
 
+  // M365 tenant lookup (live Microsoft endpoints)
+  {
+    const { status, json } = await getJson('/api/tenant?domain=microsoft.com');
+    okUpstream('tenant microsoft.com 200', status, status === 200, `status ${status}`);
+    okUpstream('tenant is Commercial', status, json && json.isTenant && json.environment === 'Commercial', JSON.stringify(json && json.environment));
+    okUpstream('tenant has GUID', status, json && /^[0-9a-f-]{36}$/.test(json.tenantId || ''), JSON.stringify(json && json.tenantId));
+  }
+  {
+    const { status, json } = await getJson('/api/tenant?domain=irs.gov');
+    okUpstream('tenant irs.gov is GCC', status, json && json.environment === 'GCC', JSON.stringify(json && json.environment));
+  }
+  {
+    const { status, json } = await getJson('/api/tenant?domain=sierraspace.com');
+    okUpstream('tenant sierraspace.com is GCC High', status, json && json.environment === 'GCC High', JSON.stringify(json && json.environment));
+  }
+  {
+    const { status } = await getJson('/api/tenant?domain=notadomain'); // no dot -> invalid
+    ok('tenant invalid-domain 400', status === 400);
+  }
+  {
+    // A syntactically valid but non-existent domain -> 200 isTenant:false
+    const { status, json } = await getJson('/api/tenant?domain=no-such-tenant-9f8e7d6c5b4a.com');
+    okUpstream('tenant fake domain -> isTenant false', status, json && json.isTenant === false, JSON.stringify(json && json.isTenant));
+  }
+
   // asn (live bgpview.io)
   {
     const { status, json } = await getJson('/api/asn?q=AS13335');

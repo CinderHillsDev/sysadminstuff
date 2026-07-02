@@ -217,6 +217,19 @@ check('ssrf blocks v4-mapped private', parse.isBlockedHost('::ffff:10.0.0.1'));
 check('ssrf blocks v4-mapped hex metadata', parse.isBlockedHost('::ffff:a9fe:a9fe'));
 check('ssrf allows public v6', !parse.isBlockedHost('2606:4700::1111'));
 
+// ================= lib/parse.mjs: M365 tenant classification =================
+eq('env Commercial (no sub_scope)', parse.classifyTenantEnvironment({ subScope: '', cloudInstance: 'microsoftonline.com' }), 'Commercial');
+eq('env GCC (sub_scope GCC)', parse.classifyTenantEnvironment({ subScope: 'GCC', cloudInstance: 'microsoftonline.com' }), 'GCC');
+eq('env GCC High (DODCON)', parse.classifyTenantEnvironment({ subScope: 'DODCON', cloudInstance: 'microsoftonline.us' }), 'GCC High');
+eq('env DoD', parse.classifyTenantEnvironment({ subScope: 'DOD', cloudInstance: 'microsoftonline.us' }), 'DoD');
+eq('env GCC High (gov cloud, no sub)', parse.classifyTenantEnvironment({ subScope: '', cloudInstance: 'microsoftonline.us' }), 'GCC High');
+eq('env China', parse.classifyTenantEnvironment({ subScope: '', cloudInstance: 'partner.microsoftonline.cn' }), 'China (21Vianet)');
+eq('env default empty', parse.classifyTenantEnvironment({}), 'Commercial');
+eq('extractTenantId from issuer', parse.extractTenantId('https://login.microsoftonline.com/72f988bf-86f1-41af-91ab-2d7cd011db47/v2.0'), '72f988bf-86f1-41af-91ab-2d7cd011db47');
+eq('extractTenantId none', parse.extractTenantId('https://login.microsoftonline.com/contoso.com/v2.0'), '');
+eq('parseTenantDomains dedups+sorts', parse.parseTenantDomains('<Domain>b.com</Domain><Domain>A.com</Domain><Domain>b.com</Domain>'), ['a.com', 'b.com']);
+eq('parseTenantDomains empty', parse.parseTenantDomains('<x/>'), []);
+
 // ---- report ----
 const total = passed + failures.length;
 if (failures.length) {
