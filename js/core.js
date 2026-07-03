@@ -598,6 +598,54 @@
     } catch (e) { return null; }
   }
 
+  // ---------- Record builders ----------
+  function buildSpf(o) {
+    o = o || {};
+    const parts = ['v=spf1'];
+    (o.ip4 || []).forEach((ip) => ip && parts.push('ip4:' + ip));
+    (o.ip6 || []).forEach((ip) => ip && parts.push('ip6:' + ip));
+    (o.includes || []).forEach((d) => d && parts.push('include:' + d));
+    if (o.a) parts.push('a');
+    if (o.mx) parts.push('mx');
+    parts.push((o.all || '~') + 'all');
+    return parts.join(' ');
+  }
+  function buildDmarc(o) {
+    o = o || {};
+    const parts = ['v=DMARC1', 'p=' + (o.policy || 'none')];
+    if (o.subPolicy && o.subPolicy !== o.policy) parts.push('sp=' + o.subPolicy);
+    if (o.pct !== undefined && o.pct !== '' && Number(o.pct) !== 100) parts.push('pct=' + o.pct);
+    if (o.rua) parts.push('rua=mailto:' + o.rua);
+    if (o.ruf) parts.push('ruf=mailto:' + o.ruf);
+    if (o.adkim) parts.push('adkim=' + o.adkim);
+    if (o.aspf) parts.push('aspf=' + o.aspf);
+    return parts.join('; ');
+  }
+
+  // ---------- CIDR helpers ----------
+  function cidrContains(cidr, ip) {
+    const [net, bitsStr] = String(cidr).split('/');
+    const bits = Number(bitsStr);
+    if (!isIPv4(net) || !isIPv4(ip) || !(Number.isInteger(bits) && bits >= 0 && bits <= 32)) return null;
+    const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+    return ((ipToInt(ip) & mask) >>> 0) === ((ipToInt(net) & mask) >>> 0);
+  }
+  function splitCidr(cidr, newBits) {
+    const [net, bitsStr] = String(cidr).split('/');
+    const bits = Number(bitsStr);
+    newBits = Number(newBits);
+    if (!isIPv4(net) || !(Number.isInteger(bits) && bits >= 0 && bits <= 32)) return null;
+    if (!(Number.isInteger(newBits) && newBits >= bits && newBits <= 32)) return null;
+    const count = Math.pow(2, newBits - bits);
+    if (count > 1024) return null; // cap output
+    const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+    const base = (ipToInt(net) & mask) >>> 0;
+    const step = newBits === 32 ? 1 : Math.pow(2, 32 - newBits);
+    const out = [];
+    for (let i = 0; i < count; i++) out.push(intToIp((base + i * step) >>> 0) + '/' + newBits);
+    return out;
+  }
+
   // ---------- CAA rdata ----------
   // Cloudflare DoH returns CAA in RFC 3597 generic form: "\# 15 00 05 69 73 73..."
   // (len + hex bytes: flags, tag-length, tag, value). Some resolvers return the
@@ -711,6 +759,7 @@
     isIPv4, isIPv6, isIP, isDomain, isCIDR, isASN, isURL, normalizeURL, isPrivateIP,
     matchProvider, classifyCloudOrg, parseArn, awsAccountFromKey, base32DecodeBytes, parseCaaRdata,
     parseCertificate, parseCsr,
+    buildSpf, buildDmarc, cidrContains, splitCidr,
     ipToInt, intToIp, maskToBits, subnetInfo, parseCidrInput,
     b64EncodeUtf8, b64DecodeUtf8, looksLikeBase64, b64urlDecode, decodeJwtParts,
     parseSpf, SPF_QUALIFIERS, parseDmarcTags,

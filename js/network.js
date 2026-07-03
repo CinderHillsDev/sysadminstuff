@@ -133,7 +133,50 @@ async function runRDNS(query, panel) {
   }
 }
 
+// ---------- CIDR tools ----------
+function runCidr(query, panel) {
+  if (panel.dataset.wired) return;
+  panel.innerHTML = `
+    <div class="privacy-note">Calculated in your browser.</div>
+    <div class="card"><h3>Is an IP inside a CIDR?</h3>
+      <div class="btn-row">
+        <input class="text-input" id="cc-cidr" placeholder="10.0.0.0/8" style="width:11rem">
+        <input class="text-input" id="cc-ip" placeholder="10.5.6.7" style="width:11rem">
+        <button class="btn primary" id="cc-go">Check</button>
+      </div>
+      <div class="result" id="cc-out"></div>
+    </div>
+    <div class="card"><h3>Split a CIDR into subnets</h3>
+      <div class="btn-row">
+        <input class="text-input" id="cs-cidr" placeholder="192.168.1.0/24" style="width:13rem">
+        <label class="field-label" style="margin:0">into /<input class="text-input" id="cs-bits" placeholder="26" style="width:4rem"></label>
+        <button class="btn primary" id="cs-go">Split</button>
+      </div>
+      <div class="result" id="cs-out"></div>
+    </div>`;
+  const ccOut = panel.querySelector('#cc-out');
+  const check = () => {
+    const r = window.cidrContains(panel.querySelector('#cc-cidr').value.trim(), panel.querySelector('#cc-ip').value.trim());
+    if (r === null) { window.showError(ccOut, 'Enter a valid CIDR and IPv4 address.'); return; }
+    ccOut.innerHTML = r
+      ? `<div class="summary green">✓ Yes — the IP is inside that range.</div>`
+      : `<div class="summary red">✗ No — the IP is outside that range.</div>`;
+  };
+  const csOut = panel.querySelector('#cs-out');
+  const split = () => {
+    const list = window.splitCidr(panel.querySelector('#cs-cidr').value.trim(), panel.querySelector('#cs-bits').value.trim());
+    if (list === null) { window.showError(csOut, 'Enter a valid CIDR and a longer prefix (≤1024 subnets).'); return; }
+    const rows = list.map((c) => `<tr><td class="data-cell"><span class="data-val">${c}</span><button class="copy-cell" data-copy="${c}" title="Copy">⧉</button></td></tr>`).join('');
+    csOut.innerHTML = window.card(`${list.length} subnets`, `<table><tbody>${rows}</tbody></table>`, list.join('\n'));
+    window.wireCopyButtons(csOut);
+  };
+  panel.querySelector('#cc-go').addEventListener('click', check);
+  panel.querySelector('#cs-go').addEventListener('click', split);
+  panel.dataset.wired = '1';
+}
+
 window.registerRunner('network', 'asn', runASN);
+window.registerRunner('network', 'cidr', runCidr);
 window.registerRunner('network', 'subnet', runSubnet);
 window.registerRunner('network', 'geo', runGeo);
 window.registerRunner('network', 'rdns', runRDNS);

@@ -277,7 +277,70 @@ async function runRBL(query, panel) {
   }
 }
 
+// ---------- Record builder (SPF + DMARC) ----------
+function runBuilder(query, panel) {
+  if (panel.dataset.wired) return;
+  panel.innerHTML = `
+    <div class="privacy-note">Built in your browser — publish the generated record as a TXT record.</div>
+    <div class="card"><h3>SPF record</h3>
+      <div class="btn-row">
+        <label class="field-label" style="margin:0;flex:1">ip4 (comma-separated)<input class="text-input" id="spf-ip4" placeholder="1.2.3.4, 5.6.7.0/24" style="width:100%"></label>
+      </div>
+      <div class="btn-row">
+        <label class="field-label" style="margin:0;flex:1">include<input class="text-input" id="spf-inc" placeholder="_spf.google.com" style="width:100%"></label>
+      </div>
+      <div class="btn-row">
+        <label><input type="checkbox" id="spf-a"> a</label>
+        <label><input type="checkbox" id="spf-mx"> mx</label>
+        <label class="field-label" style="margin:0">policy
+          <select class="text-input" id="spf-all"><option value="~">~all (softfail)</option><option value="-">-all (fail)</option><option value="?">?all (neutral)</option></select></label>
+      </div>
+      <div class="result" id="spf-out"></div>
+    </div>
+    <div class="card"><h3>DMARC record</h3>
+      <div class="btn-row">
+        <label class="field-label" style="margin:0">policy
+          <select class="text-input" id="dm-p"><option value="none">none</option><option value="quarantine">quarantine</option><option value="reject">reject</option></select></label>
+        <label class="field-label" style="margin:0">pct<input class="text-input" id="dm-pct" value="100" style="width:4rem"></label>
+        <label class="field-label" style="margin:0">alignment
+          <select class="text-input" id="dm-align"><option value="r">relaxed</option><option value="s">strict</option></select></label>
+      </div>
+      <div class="btn-row">
+        <label class="field-label" style="margin:0;flex:1">aggregate reports (rua)<input class="text-input" id="dm-rua" placeholder="dmarc@example.com" style="width:100%"></label>
+      </div>
+      <div class="result" id="dm-out"></div>
+    </div>`;
+  const splitList = (v) => v.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+  const record = (r) => `<pre class="raw">${window.escapeHtml(r)}</pre>`;
+  const buildS = () => {
+    const r = window.buildSpf({
+      ip4: splitList(panel.querySelector('#spf-ip4').value),
+      includes: splitList(panel.querySelector('#spf-inc').value),
+      a: panel.querySelector('#spf-a').checked, mx: panel.querySelector('#spf-mx').checked,
+      all: panel.querySelector('#spf-all').value,
+    });
+    const out = panel.querySelector('#spf-out');
+    out.innerHTML = record(r) + `<button class="copy-btn" data-copy="${window.escapeHtml(r)}" style="position:static">copy</button>`;
+    window.wireCopyButtons(out);
+  };
+  const buildD = () => {
+    const align = panel.querySelector('#dm-align').value;
+    const r = window.buildDmarc({
+      policy: panel.querySelector('#dm-p').value, pct: panel.querySelector('#dm-pct').value,
+      rua: panel.querySelector('#dm-rua').value.trim(), adkim: align, aspf: align,
+    });
+    const out = panel.querySelector('#dm-out');
+    out.innerHTML = `<div class="muted" style="margin-bottom:0.3rem">Host: <code>_dmarc.yourdomain.com</code></div>` + record(r) + `<button class="copy-btn" data-copy="${window.escapeHtml(r)}" style="position:static">copy</button>`;
+    window.wireCopyButtons(out);
+  };
+  panel.querySelectorAll('#spf-ip4,#spf-inc,#spf-a,#spf-mx,#spf-all').forEach((el) => el.addEventListener('input', buildS));
+  panel.querySelectorAll('#dm-p,#dm-pct,#dm-align,#dm-rua').forEach((el) => el.addEventListener('input', buildD));
+  buildS(); buildD();
+  panel.dataset.wired = '1';
+}
+
 window.registerRunner('email', 'spf', runSPF);
+window.registerRunner('email', 'builder', runBuilder);
 window.registerRunner('email', 'dmarc', runDMARC);
 window.registerRunner('email', 'dkim', runDKIM);
 window.registerRunner('email', 'mx', runMX);

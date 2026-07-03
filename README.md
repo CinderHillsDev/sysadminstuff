@@ -14,6 +14,8 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 ### DNS
 - **Lookup** — A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, or ALL, via Cloudflare DNS-over-HTTPS. IP input auto-switches to reverse (PTR).
 - **Propagation** — the same record across Cloudflare, Google, and DNS.SB, with a consistency verdict. Runs entirely in your browser (these are the public resolvers that expose a browser-usable JSON + CORS DoH API).
+- **CAA** — which CAs may issue certificates for a domain (RFC3597-parsed). 
+- **DNSSEC** — signed/unsigned status from the AD flag + DS/DNSKEY presence.
 
 ### Email
 - **SPF** — parsed mechanisms with plain-English explanations and a policy summary.
@@ -22,6 +24,7 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 - **MX** — priority-ordered hosts with resolved IPs and PTR records.
 - **Header Analyzer** — paste raw headers to trace the routing path, per-hop delays, and SPF/DKIM/DMARC results. Runs entirely in your browser.
 - **Blacklist** — checks an IP against 15 DNS blacklists.
+- **Builder** — generate SPF and DMARC TXT records from a form.
 
 ### Web
 - **HTTP Headers** — all response headers plus a 7-point security-header scorecard.
@@ -31,11 +34,13 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 ### Network
 - **ASN Lookup** — ASN or IP details and announced prefixes (bgpview.io).
 - **Subnet Calculator** — network/broadcast/mask/range/host-count. 100% in-browser.
+- **CIDR Tools** — is-IP-in-CIDR check and split a CIDR into subnets.
 - **Geo** — approximate IP geolocation (ipwho.is).
 - **Reverse DNS** — PTR lookup with forward-confirmation.
 
 ### Cert
-- Certificate history via crt.sh — validity badge, SANs, issuer, expiry countdown.
+- **Lookup** — certificate history via crt.sh (validity, SANs, issuer, expiry).
+- **Decode PEM/CSR** — paste a certificate or CSR and see subject/issuer/SANs/validity/key/signature, parsed entirely in your browser (never uploaded).
 
 ### Whois
 - RDAP-based whois for domains and IPs.

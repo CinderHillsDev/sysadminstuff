@@ -374,6 +374,18 @@ eq('csr keySize', csr1.keySize, 2048);
 eq('csr sigAlgo', csr1.sigAlgo, 'SHA256-RSA');
 eq('csr bad', core.parseCsr('nope'), null);
 
+// ================= core.js: record builders + CIDR =================
+eq('spf build', core.buildSpf({ ip4: ['1.2.3.4'], includes: ['_spf.google.com'], mx: true, all: '-' }),
+  'v=spf1 ip4:1.2.3.4 include:_spf.google.com mx -all');
+eq('spf default all', core.buildSpf({}), 'v=spf1 ~all');
+eq('dmarc build', core.buildDmarc({ policy: 'reject', rua: 'r@x.com' }), 'v=DMARC1; p=reject; rua=mailto:r@x.com');
+eq('dmarc pct + sp', core.buildDmarc({ policy: 'quarantine', subPolicy: 'reject', pct: 50 }), 'v=DMARC1; p=quarantine; sp=reject; pct=50');
+eq('cidr contains yes', core.cidrContains('10.0.0.0/8', '10.5.6.7'), true);
+eq('cidr contains no', core.cidrContains('10.0.0.0/8', '11.0.0.1'), false);
+eq('cidr contains bad', core.cidrContains('nope', '1.2.3.4'), null);
+eq('cidr split /24->/26', core.splitCidr('192.168.1.0/24', 26), ['192.168.1.0/26', '192.168.1.64/26', '192.168.1.128/26', '192.168.1.192/26']);
+eq('cidr split too many', core.splitCidr('10.0.0.0/8', 24), null);
+
 // ---- report ----
 const total = passed + failures.length;
 if (failures.length) {

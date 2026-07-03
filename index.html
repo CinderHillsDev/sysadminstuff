@@ -56,6 +56,7 @@
         <button class="subtab" data-subtab="mx" data-tip="MX hosts with IPs and PTR match check">MX</button>
         <button class="subtab" data-subtab="headers" data-tip="Paste raw email headers to trace the routing path">Header Analyzer</button>
         <button class="subtab" data-subtab="rbl" data-tip="Check an IP against 15 DNS blacklists">Blacklist</button>
+        <button class="subtab" data-subtab="builder" data-tip="Generate SPF and DMARC records">Builder</button>
       </nav>
       <div class="subpanel active" id="panel-email-spf"></div>
       <div class="subpanel" id="panel-email-dmarc"></div>
@@ -63,6 +64,7 @@
       <div class="subpanel" id="panel-email-mx"></div>
       <div class="subpanel" id="panel-email-headers"></div>
       <div class="subpanel" id="panel-email-rbl"></div>
+      <div class="subpanel" id="panel-email-builder"></div>
     </div>
 
     <!-- Web -->
@@ -82,6 +84,7 @@
       <nav class="tabs secondary">
         <button class="subtab active" data-subtab="asn" data-tip="ASN or IP details via bgpview.io">ASN Lookup</button>
         <button class="subtab" data-subtab="subnet" data-tip="Subnet math — runs entirely in your browser">Subnet Calculator</button>
+        <button class="subtab" data-subtab="cidr" data-tip="IP-in-CIDR check + split a CIDR into subnets">CIDR Tools</button>
         <button class="subtab" data-subtab="geo" data-tip="Approximate IP geolocation">Geo</button>
         <button class="subtab" data-subtab="rdns" data-tip="PTR lookup with forward-confirmation">Reverse DNS</button>
       </nav>
@@ -89,6 +92,7 @@
       <div class="subpanel" id="panel-network-subnet"></div>
       <div class="subpanel" id="panel-network-geo"></div>
       <div class="subpanel" id="panel-network-rdns"></div>
+      <div class="subpanel" id="panel-network-cidr"></div>
     </div>
 
     <!-- Cert -->
