@@ -107,10 +107,22 @@
         <button class="subtab active" data-subtab="base64" data-tip="Base64 encode/decode in your browser">Base64</button>
         <button class="subtab" data-subtab="urlencode" data-tip="URL encode/decode in your browser">URL Encode</button>
         <button class="subtab" data-subtab="jwt" data-tip="Decode a JWT locally — never sent anywhere">JWT Decoder</button>
+        <button class="subtab" data-subtab="hash" data-tip="MD5/SHA hashes, computed in your browser">Hash</button>
+        <button class="subtab" data-subtab="gen" data-tip="Strong passwords &amp; UUIDs via a crypto RNG">Password</button>
+        <button class="subtab" data-subtab="epoch" data-tip="Unix timestamp ↔ date converter">Epoch</button>
+        <button class="subtab" data-subtab="cron" data-tip="Explain a cron expression + next runs">Cron</button>
+        <button class="subtab" data-subtab="chmod" data-tip="chmod octal ↔ symbolic calculator">Chmod</button>
+        <button class="subtab" data-subtab="json" data-tip="Format / validate / minify JSON">JSON</button>
       </nav>
       <div class="subpanel active" id="panel-utils-base64"></div>
       <div class="subpanel" id="panel-utils-urlencode"></div>
       <div class="subpanel" id="panel-utils-jwt"></div>
+      <div class="subpanel" id="panel-utils-hash"></div>
+      <div class="subpanel" id="panel-utils-gen"></div>
+      <div class="subpanel" id="panel-utils-epoch"></div>
+      <div class="subpanel" id="panel-utils-cron"></div>
+      <div class="subpanel" id="panel-utils-chmod"></div>
+      <div class="subpanel" id="panel-utils-json"></div>
     </div>
   </main>
 
@@ -130,5 +142,6 @@
   <script src="/js/whois.js"></script>
   <script src="/js/m365.js"></script>
   <script src="/js/utils.js"></script>
+  <script src="/js/tools.js"></script>
 </body>
 </html>

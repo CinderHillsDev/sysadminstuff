@@ -230,6 +230,56 @@ eq('extractTenantId none', parse.extractTenantId('https://login.microsoftonline.
 eq('parseTenantDomains dedups+sorts', parse.parseTenantDomains('<Domain>b.com</Domain><Domain>A.com</Domain><Domain>b.com</Domain>'), ['a.com', 'b.com']);
 eq('parseTenantDomains empty', parse.parseTenantDomains('<x/>'), []);
 
+// ================= core.js: chmod =================
+eq('chmod 755 symbolic', core.chmodToSymbolic('755'), 'rwxr-xr-x');
+eq('chmod 644 symbolic', core.chmodToSymbolic('644'), 'rw-r--r--');
+eq('chmod 0755 symbolic', core.chmodToSymbolic('0755'), 'rwxr-xr-x');
+eq('chmod 777 symbolic', core.chmodToSymbolic('777'), 'rwxrwxrwx');
+eq('chmod bad', core.chmodToSymbolic('999'), null);
+eq('chmod rwxr-xr-x octal', core.chmodToOctal('rwxr-xr-x'), '755');
+eq('chmod rw-r--r-- octal', core.chmodToOctal('rw-r--r--'), '644');
+eq('chmod leading type char', core.chmodToOctal('-rwxr-xr-x'), '755');
+eq('chmod describe owner', core.chmodDescribe('750').lines[0], 'Owner: read, write, execute');
+
+// ================= core.js: number bases =================
+eq('base 255 dec', core.numberBases('255', 10), { dec: '255', hex: 'ff', oct: '377', bin: '11111111' });
+eq('base ff hex -> 255', core.numberBases('ff', 16).dec, '255');
+eq('base 0xff strips prefix', core.numberBases('0xff', 16).dec, '255');
+eq('base 1010 bin -> 10', core.numberBases('1010', 2).dec, '10');
+eq('base bad digit', core.numberBases('2', 2), null);
+eq('base bigint safe', core.numberBases('ffffffffffffffff', 16).dec, '18446744073709551615');
+
+// ================= core.js: epoch =================
+eq('epoch 0 iso', core.epochToParts(0).iso, '1970-01-01T00:00:00.000Z');
+eq('epoch seconds detect', core.epochToParts(1000000000).iso, '2001-09-09T01:46:40.000Z');
+eq('epoch ms detect', core.epochToParts(1000000000000).iso, '2001-09-09T01:46:40.000Z');
+eq('epoch bad', core.epochToParts('nope'), null);
+
+// ================= core.js: password entropy =================
+eq('entropy 16x94', core.passwordEntropyBits(16, 94), 104.9);
+eq('entropy zero', core.passwordEntropyBits(0, 94), 0);
+
+// ================= core.js: cron =================
+const cron = core.parseCron('*/15 2 * * 1-5');
+check('cron parses', cron !== null);
+eq('cron minutes', cron.min, [0, 15, 30, 45]);
+eq('cron hour', cron.hour, [2]);
+eq('cron dow mon-fri', cron.dow, [1, 2, 3, 4, 5]);
+eq('cron 5 fields required', core.parseCron('* * * *'), null);
+eq('cron names', core.parseCron('0 0 * jan mon').month, [1]);
+eq('cron sun=7 normalized', core.parseCron('0 0 * * 7').dow, [0]);
+// next runs from a fixed UTC instant (Wed 2024-01-03 01:00:00Z) — cron runs at 02:00 Mon-Fri every 15min
+const runs = core.nextCronRuns(core.parseCron('*/15 2 * * 1-5'), new Date('2024-01-03T01:00:00Z'), 2);
+eq('cron next run 1', runs[0].toISOString(), '2024-01-03T02:00:00.000Z');
+eq('cron next run 2', runs[1].toISOString(), '2024-01-03T02:15:00.000Z');
+check('cron describe non-empty', typeof core.describeCron('*/15 2 * * 1-5') === 'string' && core.describeCron('*/15 2 * * 1-5').length > 0);
+
+// ================= core.js: MD5 =================
+eq('md5 empty', core.md5(''), 'd41d8cd98f00b204e9800998ecf8427e');
+eq('md5 abc', core.md5('abc'), '900150983cd24fb0d6963f7d28e17f72');
+eq('md5 fox', core.md5('The quick brown fox jumps over the lazy dog'), '9e107d9d372bb6826bd81d3542a419d6');
+eq('md5 utf8', core.md5('héllo'), core.md5('héllo')); // stable
+
 // ---- report ----
 const total = passed + failures.length;
 if (failures.length) {
