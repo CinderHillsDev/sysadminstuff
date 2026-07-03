@@ -455,8 +455,21 @@ footer {
 @media (min-width: 640px) {
   .util-io.two-col { grid-template-columns: 1fr 1fr; }
 }
+
+/* Phones: stop wide inputs from forcing horizontal page scroll. Several tools
+   set an inline min-width (16–20rem) on flex inputs; on a narrow screen let them
+   shrink and go full-width instead. Tables/pre already wrap or scroll. */
+@media (max-width: 560px) {
+  .input-bar { flex-wrap: wrap; }
+  .input-bar input { min-width: 0; }
+  .btn-row { gap: 0.4rem; }
+  .btn-row .text-input { min-width: 0 !important; flex: 1 1 12rem; }
+  .btn-row > label { flex: 1 1 100%; }
+  .card { overflow-x: auto; }          /* wide multi-column tables scroll in-card */
+}
 @media (max-width: 480px) {
   header h1 { font-size: 1.3rem; }
   main { padding: 0.75rem; }
   .tab, .subtab { padding: 0.4rem 0.6rem; font-size: 0.8rem; }
+  .util-io textarea, textarea.mono { min-height: 6.5rem; }
 }
