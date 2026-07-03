@@ -224,7 +224,8 @@ function analyzeHeaders(panel) {
   });
 
   const chainHtml = hops.map((h) =>
-    `<li><strong>${h.i}.</strong> ${window.escapeHtml(h.from)} → ${window.escapeHtml(h.by)} <span class="muted">${window.escapeHtml(h.time)} ${h.delay ? '(' + h.delay + ')' : ''}</span></li>`
+    `<tr><td>${h.i}</td><td>${window.escapeHtml(h.from)}</td><td>${window.escapeHtml(h.by)}</td>` +
+    `<td>${window.escapeHtml(h.time) || '<span class="muted">—</span>'}${h.delay ? ` <span class="muted">(${window.escapeHtml(h.delay)})</span>` : ''}</td></tr>`
   ).join('');
 
   // Authentication results
@@ -251,7 +252,10 @@ function analyzeHeaders(panel) {
   out.innerHTML =
     window.card('Authentication results', authHtml) +
     window.card('Message details', `<table><tbody>${meta}</tbody></table>`) +
-    window.card(`Routing path (${hops.length} hops, oldest first)`, chainHtml ? `<ul class="chain">${chainHtml}</ul>` : '<div class="muted">No Received headers found.</div>');
+    window.card(`Routing path (${hops.length} hops, oldest first)`,
+      chainHtml
+        ? `<table><thead><tr><th>Step</th><th>Source</th><th>Dest</th><th>Time</th></tr></thead><tbody>${chainHtml}</tbody></table>`
+        : '<div class="muted">No Received headers found.</div>');
 }
 
 // ---------- Blacklist (RBL) ----------
