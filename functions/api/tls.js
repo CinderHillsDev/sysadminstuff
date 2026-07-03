@@ -25,9 +25,12 @@ export async function onRequest(context) {
   const params = new URL(request.url).searchParams;
   let host = (params.get('host') || '').trim();
   if (!host) return json({ error: 'Missing host parameter.' }, 400);
-  // Accept a URL and extract hostname
-  try { if (/^https?:\/\//i.test(host)) host = new URL(host).hostname; } catch (e) { /* ignore */ }
-  if (!/^[a-zA-Z0-9.-]+$/.test(host)) return json({ error: 'Invalid hostname.' }, 400);
+  // Always canonicalize via the WHATWG URL parser so alternate IP encodings
+  // (127.1, 2130706433, 0x7f000001, 0177.0.0.1) normalize to dotted-quad before
+  // the SSRF guard sees them — otherwise they'd slip past isBlockedHost.
+  try { host = new URL(/^https?:\/\//i.test(host) ? host : 'https://' + host).hostname; } catch (e) { /* fall through to validation */ }
+  host = host.replace(/^\[|\]$/g, '');
+  if (!/^[a-zA-Z0-9.:-]+$/.test(host)) return json({ error: 'Invalid hostname.' }, 400);
   // Only ever probe the HTTPS port. Accepting an arbitrary port would turn this
   // into an internal port scanner; the UI only ever checks 443.
   const port = 443;
@@ -74,7 +77,7 @@ export async function onRequest(context) {
     issues.length = 0;
   }
 
-  return json({
+  const res = json({
     host,
     port,
     grade,
@@ -84,4 +87,7 @@ export async function onRequest(context) {
     issues,
     note: 'Cloudflare Workers negotiate TLS 1.2/1.3 and validate the certificate chain. Legacy TLS 1.0/1.1 cannot be probed from this platform and are reported as unsupported by policy.',
   });
+  // A failed handshake is often transient (timeout / host down); don't cache it.
+  if (!handshakeOK) res.headers.set('Cache-Control', 'no-store');
+  return res;
 }

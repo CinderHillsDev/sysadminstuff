@@ -85,11 +85,16 @@ function decodeJWT(token, out) {
   const { header, payload } = res;
   const parts = [null, null, res.signature];
 
+  // Guard against hostile payloads: a non-object payload, or an out-of-range exp,
+  // must not throw (which would silently freeze the live-updating decoder).
   let expNote = '';
-  if (payload.exp) {
-    const expDate = new Date(payload.exp * 1000);
-    const expired = expDate < new Date();
-    expNote = `<div class="summary ${expired ? 'red' : 'green'}">exp: ${expDate.toISOString()} — ${expired ? 'EXPIRED' : 'valid'}</div>`;
+  const exp = payload && typeof payload === 'object' ? payload.exp : undefined;
+  if (typeof exp === 'number' && isFinite(exp)) {
+    const expDate = new Date(exp * 1000);
+    if (!isNaN(expDate.getTime())) {
+      const expired = expDate < new Date();
+      expNote = `<div class="summary ${expired ? 'red' : 'green'}">exp: ${expDate.toISOString()} — ${expired ? 'EXPIRED' : 'valid'}</div>`;
+    }
   }
   const headerJson = JSON.stringify(header, null, 2);
   const payloadJson = JSON.stringify(payload, null, 2);

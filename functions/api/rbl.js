@@ -62,5 +62,10 @@ export async function onRequest(context) {
     }
   }));
 
-  return json({ ip, checked: ZONES.length, listedCount: results.filter((r) => r.listed).length, results });
+  // If any zone lookup failed transiently, don't let the edge cache freeze a
+  // partial result for the full TTL.
+  const degraded = results.some((r) => r.response === 'lookup error');
+  const res = json({ ip, checked: ZONES.length, listedCount: results.filter((r) => r.listed).length, results });
+  if (degraded) res.headers.set('Cache-Control', 'no-store');
+  return res;
 }

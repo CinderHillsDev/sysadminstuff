@@ -413,15 +413,22 @@
     return arr;
   }
   function readTLV(buf, pos) {
-    if (pos + 1 >= buf.length) return null;
+    if (pos < 0 || pos + 1 >= buf.length) return null;
     const tag = buf[pos];
     let len = buf[pos + 1], hdr = 2;
     if (len & 0x80) {
-      const n = len & 0x7f; len = 0;
-      for (let i = 0; i < n; i++) len = (len << 8) | buf[pos + 2 + i];
+      const n = len & 0x7f;
+      // Reject indefinite (0), oversized (>4 length bytes), or truncated lengths.
+      if (n === 0 || n > 4 || pos + 2 + n > buf.length) return null;
+      len = 0;
+      for (let i = 0; i < n; i++) len = len * 256 + buf[pos + 2 + i]; // unsigned (no 32-bit overflow)
       hdr = 2 + n;
     }
-    return { tag, start: pos + hdr, end: pos + hdr + len, len, next: pos + hdr + len };
+    const end = pos + hdr + len;
+    // Bounds check guarantees end <= buf.length and (since hdr >= 2, len >= 0)
+    // next = end > pos — so every consumer loop makes forward progress.
+    if (end > buf.length) return null;
+    return { tag, start: pos + hdr, end, len, next: end };
   }
   function derOID(buf, start, end) {
     const first = buf[start];

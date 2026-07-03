@@ -66,7 +66,9 @@ export async function onRequest(context) {
   }
 
   const res = await next();
-  if (res.status === 200) {
+  // Don't cache responses the handler marked no-store (e.g. degraded/partial
+  // results from a transient upstream failure — see rbl.js / tls.js).
+  if (res.status === 200 && !/no-store/i.test(res.headers.get('Cache-Control') || '')) {
     const body = await res.arrayBuffer();
     const headers = new Headers(res.headers);
     headers.set('Cache-Control', `public, max-age=${ttl}`);

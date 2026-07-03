@@ -342,6 +342,12 @@ eq('cert keyAlgo', cert1.keyAlgo, 'RSA');
 eq('cert keySize', cert1.keySize, 2048);
 eq('cert sigAlgo', cert1.sigAlgo, 'SHA256-RSA');
 eq('cert bad input', core.parseCertificate('not a cert'), null);
+// Hostile 4-byte DER length (would overflow 32-bit signed -> infinite loop pre-fix).
+// The test simply completing proves readTLV bounds-checks and never hangs.
+const evilPem = '-----BEGIN CERTIFICATE-----\n' +
+  Buffer.from([0x30, 0x84, 0xff, 0xff, 0xff, 0xfa, 0x00, 0x00]).toString('base64') +
+  '\n-----END CERTIFICATE-----';
+eq('cert overflow length -> null (no hang)', core.parseCertificate(evilPem), null);
 
 const TEST_CSR = `-----BEGIN CERTIFICATE REQUEST-----
 MIICvTCCAaUCAQAwOjEYMBYGA1UEAwwPY3NyLmV4YW1wbGUuY29tMREwDwYDVQQK

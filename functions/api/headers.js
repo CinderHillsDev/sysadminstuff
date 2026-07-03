@@ -46,10 +46,12 @@ export async function onRequest(context) {
       const isRedirect = res.status >= 300 && res.status < 400 && headers.location;
       if (!isRedirect) break;
 
-      let next;
-      try { next = new URL(headers.location, current).toString(); } catch (e) { break; }
-      if (isBlockedHost(new URL(next).hostname)) break;
-      current = next;
+      let nextUrl;
+      try { nextUrl = new URL(headers.location, current); } catch (e) { break; }
+      // Re-validate scheme AND host on every hop (a redirect could point at
+      // file:/gopher: or an internal address).
+      if (!['http:', 'https:'].includes(nextUrl.protocol) || isBlockedHost(nextUrl.hostname)) break;
+      current = nextUrl.toString();
     }
     return json(chain);
   } catch (e) {

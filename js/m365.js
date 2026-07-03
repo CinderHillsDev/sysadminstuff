@@ -36,7 +36,14 @@ async function runTenant(query, panel) {
       ['Brand name', window.escapeHtml(d.brandName || '—')],
       ['Identity', d.namespaceType ? `<span class="badge ${nsBadge}">${window.escapeHtml(d.namespaceType)}</span>${d.namespaceType === 'Federated' ? ' (ADFS / external IdP)' : d.namespaceType === 'Managed' ? ' (Entra ID / cloud)' : ''}` : '—'],
     ];
-    if (d.authUrl) rows.push(['Federation URL', `<a href="${encodeURI(d.authUrl)}" target="_blank" rel="noopener noreferrer">${window.escapeHtml(d.authUrl)}</a>`]);
+    if (d.authUrl) {
+      // Only link http(s); an attacker-controlled federated domain could return a
+      // javascript:/data: AuthURL (encodeURI does NOT neutralize the scheme).
+      const safeUrl = /^https?:\/\//i.test(d.authUrl);
+      rows.push(['Federation URL', safeUrl
+        ? `<a href="${encodeURI(d.authUrl)}" target="_blank" rel="noopener noreferrer">${window.escapeHtml(d.authUrl)}</a>`
+        : window.escapeHtml(d.authUrl)]);
+    }
     rows.push(
       ['Cloud instance', window.escapeHtml(d.cloudInstance || '—')],
       ['Region scope', window.escapeHtml(d.regionScope || '—') + (d.subScope ? ` / ${window.escapeHtml(d.subScope)}` : '')],
