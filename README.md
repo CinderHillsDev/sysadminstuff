@@ -52,7 +52,7 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 
 sysadminstuff.net does not log, store, or track queries. No analytics. No cookies. No ads. The utility tools (JWT decoder, Base64, URL encode, subnet calculator) run entirely in your browser and never transmit data. See [PRIVACY.md](PRIVACY.md) for full details.
 
-The only external asset loaded by the page is the JetBrains Mono font from Google Fonts. To eliminate even that request, download the font, drop the `.woff2` files under `css/fonts/`, replace the Google Fonts `<link>` tags in `index.html`/`privacy.html` with a local `@font-face` block in `css/style.css`, and you have a fully self-contained site.
+The page makes **no external asset requests at all** — the IBM Plex fonts are self-hosted (`css/fonts/*.woff2`, [SIL OFL](https://opensource.org/license/ofl-1-1)) and every script/style is served from the same origin. Nothing (not even a font request) leaks to a third party on page load.
 
 ---
 

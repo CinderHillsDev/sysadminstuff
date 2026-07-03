@@ -19,9 +19,9 @@ Logging is used only for internal errors with **no user data attached** — for 
 
 The site runs on Cloudflare Pages. As the hosting provider, Cloudflare may collect standard infrastructure metrics (request counts, error rates). We do not have access to your query content, and we do not enable Cloudflare Web Analytics.
 
-## Google Fonts
+## Fonts
 
-The page loads the JetBrains Mono font from Google Fonts, so your browser makes a request to Google for the font files. To avoid this entirely, the font can be self-hosted — see the README for instructions.
+The IBM Plex fonts are self-hosted and served from this site's own origin. The page makes **no external asset requests** on load — no Google Fonts, no CDNs — so nothing (not even a font request) is sent to a third party just by opening the page.
 
 ## Third-party APIs
 
