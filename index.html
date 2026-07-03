@@ -29,6 +29,7 @@
       <button class="tab" data-tab="cert">Cert</button>
       <button class="tab" data-tab="whois">Whois</button>
       <button class="tab" data-tab="m365">M365</button>
+      <button class="tab" data-tab="cloud">Cloud</button>
       <button class="tab" data-tab="utils">Utils</button>
     </nav>
 
@@ -101,6 +102,20 @@
       <div class="subpanel active" id="panel-m365-main"></div>
     </div>
 
+    <!-- Cloud -->
+    <div id="tab-cloud" class="tab-panel">
+      <nav class="tabs secondary">
+        <button class="subtab active" data-subtab="ip" data-tip="Which cloud (and AWS region) owns an IP">Cloud IP</button>
+        <button class="subtab" data-subtab="fingerprint" data-tip="Hosting / email / DNS provider behind a domain">Fingerprint</button>
+        <button class="subtab" data-subtab="awskey" data-tip="Derive the AWS account ID from an access key">AWS Key</button>
+        <button class="subtab" data-subtab="arn" data-tip="Break an ARN into its components">ARN</button>
+      </nav>
+      <div class="subpanel active" id="panel-cloud-ip"></div>
+      <div class="subpanel" id="panel-cloud-fingerprint"></div>
+      <div class="subpanel" id="panel-cloud-awskey"></div>
+      <div class="subpanel" id="panel-cloud-arn"></div>
+    </div>
+
     <!-- Utils — each tool is self-contained, no shared input bar -->
     <div id="tab-utils" class="tab-panel">
       <nav class="tabs secondary">
@@ -113,6 +128,8 @@
         <button class="subtab" data-subtab="cron" data-tip="Explain a cron expression + next runs">Cron</button>
         <button class="subtab" data-subtab="chmod" data-tip="chmod octal ↔ symbolic calculator">Chmod</button>
         <button class="subtab" data-subtab="json" data-tip="Format / validate / minify JSON">JSON</button>
+        <button class="subtab" data-subtab="base" data-tip="Convert between hex / dec / oct / bin">Base Convert</button>
+        <button class="subtab" data-subtab="regex" data-tip="Test a regex and highlight matches">Regex</button>
       </nav>
       <div class="subpanel active" id="panel-utils-base64"></div>
       <div class="subpanel" id="panel-utils-urlencode"></div>
@@ -123,6 +140,8 @@
       <div class="subpanel" id="panel-utils-cron"></div>
       <div class="subpanel" id="panel-utils-chmod"></div>
       <div class="subpanel" id="panel-utils-json"></div>
+      <div class="subpanel" id="panel-utils-base"></div>
+      <div class="subpanel" id="panel-utils-regex"></div>
     </div>
   </main>
 
@@ -141,6 +160,7 @@
   <script src="/js/cert.js"></script>
   <script src="/js/whois.js"></script>
   <script src="/js/m365.js"></script>
+  <script src="/js/cloud.js"></script>
   <script src="/js/utils.js"></script>
   <script src="/js/tools.js"></script>
 </body>

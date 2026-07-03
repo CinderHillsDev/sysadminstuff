@@ -394,8 +394,98 @@
     return hex(a) + hex(b) + hex(c) + hex(d);
   }
 
+  // ---------- Cloud helpers ----------
+  // Provider fingerprint from a hostname (CNAME / MX / NS targets).
+  const PROVIDER_PATTERNS = [
+    [/cloudfront\.net/, 'Amazon CloudFront'],
+    [/\.elb\.amazonaws\.com|awsglobalaccelerator/, 'AWS Elastic Load Balancing'],
+    [/s3[.-][^.]*\.amazonaws\.com|s3\.amazonaws\.com/, 'Amazon S3'],
+    [/awsdns/, 'AWS Route 53'],
+    [/mail\.protection\.outlook\.com/, 'Microsoft 365 (Exchange Online)'],
+    [/azureedge\.net|azurefd\.net|trafficmanager\.net|azurewebsites\.net|cloudapp\.azure/, 'Microsoft Azure'],
+    [/azure-dns/, 'Azure DNS'],
+    [/aspmx.*google|googlemail\.com|smtp\.google/, 'Google Workspace'],
+    [/googleusercontent|ghs\.google|storage\.googleapis|appspot\.com|\.run\.app|goog(le)?\./, 'Google Cloud'],
+    [/\.pages\.dev/, 'Cloudflare Pages'],
+    [/cloudflare/, 'Cloudflare'],
+    [/fastly\.net|fastlylb/, 'Fastly'],
+    [/akamai|akamaiedge|edgekey|edgesuite/, 'Akamai'],
+    [/herokudns|herokuapp/, 'Heroku'],
+    [/github\.io|github\.map\.fastly/, 'GitHub Pages'],
+    [/netlify/, 'Netlify'],
+    [/vercel|\.now\.sh/, 'Vercel'],
+    [/pphosted\.com|proofpoint/, 'Proofpoint'],
+    [/mimecast/, 'Mimecast'],
+    [/messagelabs|symanteccloud/, 'Broadcom/Symantec Email'],
+    [/mailgun\.org/, 'Mailgun'],
+    [/sendgrid\.net/, 'SendGrid'],
+    [/nsone\.net/, 'NS1'],
+    [/dnsmadeeasy/, 'DNS Made Easy'],
+    [/ultradns/, 'UltraDNS'],
+    [/dynect|\.dyn\./, 'Dyn'],
+  ];
+  function matchProvider(host) {
+    const h = String(host || '').toLowerCase();
+    for (const [re, name] of PROVIDER_PATTERNS) if (re.test(h)) return name;
+    return null;
+  }
+  // Cloud provider from an ASN org / ISP string.
+  function classifyCloudOrg(text) {
+    const t = String(text || '').toLowerCase();
+    const map = [
+      [/amazon|aws|a2z\.com/, 'AWS'], [/microsoft|azure/, 'Microsoft Azure'],
+      [/google/, 'Google Cloud'], [/cloudflare/, 'Cloudflare'],
+      [/oracle/, 'Oracle Cloud'], [/digitalocean/, 'DigitalOcean'],
+      [/linode/, 'Linode / Akamai'], [/hetzner/, 'Hetzner'], [/\bovh\b/, 'OVH'],
+      [/akamai/, 'Akamai'], [/fastly/, 'Fastly'], [/vultr|choopa/, 'Vultr'],
+      [/alibaba|alicloud|aliyun/, 'Alibaba Cloud'], [/tencent/, 'Tencent Cloud'],
+      [/\bibm\b|softlayer/, 'IBM Cloud'], [/rackspace/, 'Rackspace'],
+    ];
+    for (const [re, name] of map) if (re.test(t)) return name;
+    return null;
+  }
+  // Parse an AWS ARN into components.
+  function parseArn(arn) {
+    const s = String(arn || '').trim();
+    if (!/^arn:/.test(s)) return null;
+    const parts = s.split(':');
+    if (parts.length < 6) return null;
+    return {
+      partition: parts[1] || '', service: parts[2] || '',
+      region: parts[3] || '(global)', account: parts[4] || '(none)',
+      resource: parts.slice(5).join(':'),
+    };
+  }
+  // Derive the AWS account ID from an access key ID (AKIA…/ASIA…). Pure, offline.
+  function base32DecodeBytes(s) {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let bits = 0, value = 0; const out = [];
+    for (const c of String(s).toUpperCase().replace(/=+$/, '')) {
+      const idx = alphabet.indexOf(c);
+      if (idx < 0) return null;
+      value = (value << 5) | idx; bits += 5;
+      if (bits >= 8) {
+        bits -= 8;
+        out.push((value >>> bits) & 0xff);
+        value &= (1 << bits) - 1; // keep only pending bits so 32-bit ops don't overflow
+      }
+    }
+    return out;
+  }
+  function awsAccountFromKey(key) {
+    const k = String(key || '').trim().toUpperCase();
+    if (!/^[A-Z0-9]{20}$/.test(k)) return null;
+    const bytes = base32DecodeBytes(k.slice(4, 20)); // 16 base32 chars -> 10 bytes
+    if (!bytes || bytes.length < 6) return null;
+    let z = 0n;
+    for (let i = 0; i < 6; i++) z = (z << 8n) | BigInt(bytes[i]);
+    const acct = (z & 0x7fffffffff80n) >> 7n;
+    return acct.toString().padStart(12, '0');
+  }
+
   const api = {
     isIPv4, isIPv6, isIP, isDomain, isCIDR, isASN, isURL, normalizeURL, isPrivateIP,
+    matchProvider, classifyCloudOrg, parseArn, awsAccountFromKey, base32DecodeBytes,
     ipToInt, intToIp, maskToBits, subnetInfo, parseCidrInput,
     b64EncodeUtf8, b64DecodeUtf8, looksLikeBase64, b64urlDecode, decodeJwtParts,
     parseSpf, SPF_QUALIFIERS, parseDmarcTags,

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl *)",
+      "Bash(dig *)",
+      "Bash(node --check *)",
+      "Bash(node tests/smoke.mjs)",
+      "Bash(node tests/smoke.mjs *)",
+      "Bash(npx --yes wrangler@3 pages dev *)",
+      "Bash(npx wrangler pages dev *)",
+      "Bash(pkill -f *)"
+    ]
+  }
+}

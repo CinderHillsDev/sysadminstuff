@@ -33,6 +33,7 @@ Some tools send your query to public APIs to perform lookups:
 - RDAP registries (whois)
 - ipwho.is (geolocation)
 - bgpview.io (ASN data)
+- AWS published IP ranges (ip-ranges.amazonaws.com) for cloud IP identification
 - Microsoft public endpoints (login.microsoftonline.com / .us, Autodiscover) for M365/Entra tenant lookup
 
 This is inherent to how those lookups work. Each service has its own privacy policy. We do not forward your IP address (no `X-Forwarded-For`) to upstream APIs where it can be avoided.

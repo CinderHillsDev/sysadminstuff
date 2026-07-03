@@ -239,9 +239,88 @@ function runJson(query, panel) {
   panel.dataset.wired = '1';
 }
 
+// ================= Number base converter =================
+function runBase(query, panel) {
+  if (panel.dataset.wired) return;
+  panel.innerHTML = `
+    <div class="privacy-note">Converted in your browser (BigInt-safe).</div>
+    <div class="btn-row">
+      <input class="text-input" id="base-in" placeholder="value" style="width:12rem">
+      <label class="field-label" style="margin:0">from
+        <select class="text-input" id="base-from">
+          <option value="10">decimal</option><option value="16">hex</option>
+          <option value="2">binary</option><option value="8">octal</option>
+        </select></label>
+    </div>
+    <div class="result" id="base-out"></div>`;
+  const inp = panel.querySelector('#base-in');
+  const sel = panel.querySelector('#base-from');
+  const out = panel.querySelector('#base-out');
+  const conv = () => {
+    const v = inp.value.trim();
+    if (!v) { out.innerHTML = ''; return; }
+    const r = window.numberBases(v, Number(sel.value));
+    if (!r) { window.showError(out, 'Invalid number for the selected base.'); return; }
+    const rows = [['Decimal', r.dec], ['Hex', r.hex], ['Octal', r.oct], ['Binary', r.bin]]
+      .map(([k, val]) => `<tr><td>${k}</td><td class="data-cell"><span class="data-val">${val}</span><button class="copy-cell" data-copy="${val}" title="Copy">⧉</button></td></tr>`).join('');
+    out.innerHTML = window.card('Bases', `<table><tbody>${rows}</tbody></table>`);
+    wire(out);
+  };
+  inp.addEventListener('input', conv);
+  sel.addEventListener('change', conv);
+  panel.dataset.wired = '1';
+}
+
+// ================= Regex tester =================
+function runRegex(query, panel) {
+  if (panel.dataset.wired) return;
+  panel.innerHTML = `
+    <div class="privacy-note">Tested in your browser.</div>
+    <div class="btn-row">
+      <span>/</span><input class="text-input" id="rx-pat" placeholder="pattern" style="flex:1;min-width:12rem">
+      <span>/</span><input class="text-input" id="rx-flags" value="g" style="width:5rem" placeholder="flags">
+    </div>
+    <label class="field-label">Test string</label>
+    <textarea class="mono" id="rx-test" placeholder="Text to match against…"></textarea>
+    <div class="result" id="rx-out"></div>`;
+  const pat = panel.querySelector('#rx-pat');
+  const flags = panel.querySelector('#rx-flags');
+  const test = panel.querySelector('#rx-test');
+  const out = panel.querySelector('#rx-out');
+  const run = () => {
+    const p = pat.value;
+    if (!p) { out.innerHTML = ''; return; }
+    let re;
+    try { re = new RegExp(p, flags.value.includes('g') ? flags.value : flags.value + 'g'); }
+    catch (e) { window.showError(out, `Invalid regex: ${window.escapeHtml(e.message)}`); return; }
+    const text = test.value;
+    let html = '', last = 0, count = 0, m;
+    const groups = [];
+    re.lastIndex = 0;
+    while ((m = re.exec(text)) !== null) {
+      count++;
+      html += window.escapeHtml(text.slice(last, m.index)) + `<mark>${window.escapeHtml(m[0]) || '∅'}</mark>`;
+      last = m.index + m[0].length;
+      if (count <= 20 && m.length > 1) groups.push(m.slice(1).map((g, i) => `#${i + 1}: ${window.escapeHtml(g == null ? '(none)' : g)}`).join('  '));
+      if (m.index === re.lastIndex) re.lastIndex++; // avoid infinite loop on empty match
+      if (count > 5000) break;
+    }
+    html += window.escapeHtml(text.slice(last));
+    out.innerHTML =
+      `<div class="summary ${count ? 'green' : 'grey'}">${count} match${count === 1 ? '' : 'es'}</div>` +
+      window.card('Highlighted', `<pre class="raw">${html || '<span class="muted">(no text)</span>'}</pre>`) +
+      (groups.length ? window.card('Capture groups (first 20 matches)', `<pre class="raw">${groups.join('\n')}</pre>`) : '');
+    wire(out);
+  };
+  [pat, flags, test].forEach((el) => el.addEventListener('input', run));
+  panel.dataset.wired = '1';
+}
+
 window.registerRunner('utils', 'hash', runHash);
 window.registerRunner('utils', 'gen', runGen);
 window.registerRunner('utils', 'epoch', runEpoch);
 window.registerRunner('utils', 'cron', runCron);
 window.registerRunner('utils', 'chmod', runChmod);
 window.registerRunner('utils', 'json', runJson);
+window.registerRunner('utils', 'base', runBase);
+window.registerRunner('utils', 'regex', runRegex);

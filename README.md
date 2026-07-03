@@ -43,8 +43,15 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 ### M365
 - **Microsoft 365 / Entra tenant lookup** — given a domain, resolves the tenant ID (GUID), brand name, and Managed vs. Federated (ADFS) identity, and classifies the **cloud environment: Commercial / GCC / GCC High / DoD** (via OpenID Connect metadata `tenant_region_sub_scope` + cloud instance). Also lists other domains in the tenant. Uses only public, unauthenticated Microsoft endpoints — no login required.
 
+### Cloud
+- **Cloud IP** — which cloud owns an IP, with exact AWS region/service (from AWS's published ranges) or ASN-based provider detection for the rest.
+- **Fingerprint** — the hosting/CDN, email, and DNS provider behind a domain (inferred from CNAME/MX/NS). Runs in your browser via DoH.
+- **AWS Key** — derive the owning AWS account ID from an access key ID (`AKIA…`/`ASIA…`), entirely offline.
+- **ARN** — break an AWS ARN into partition/service/region/account/resource.
+
 ### Utils (all client-side, zero network)
-- **Base64**, **URL Encode**, **JWT Decoder** — nothing you type leaves your browser.
+- **Base64**, **URL Encode**, **JWT Decoder** — encode/decode/inspect locally.
+- **Hash** (MD5, SHA-1/256/384/512), **Password/UUID** generator, **Epoch** converter, **Cron** explainer, **Chmod** calculator, **JSON** formatter, **Base Convert** (hex/dec/oct/bin), **Regex** tester. Nothing you type leaves your browser.
 
 ---
 
@@ -125,7 +132,7 @@ The real concern is abuse of the API endpoints (`/api/headers` fetches URLs, `/a
 ```
 index.html            privacy.html         wrangler.toml
 css/style.css
-js/    core.js app.js dns.js email.js web.js network.js cert.js whois.js m365.js utils.js
+js/    core.js app.js dns.js email.js web.js network.js cert.js whois.js m365.js cloud.js utils.js tools.js
 lib/   parse.mjs
 functions/  _middleware.js  api/  whois.js rbl.js tls.js headers.js asn.js tenant.js
 tests/ smoke.mjs e2e.mjs README.md
@@ -139,7 +146,7 @@ Issues and PRs welcome. Guidelines:
 
 - No build step and no frontend dependencies — keep it plain HTML/CSS/JS.
 - **Never log user input** in a Pages Function (query params, URLs, IPs). See the no-logging rules in [PRIVACY.md](PRIVACY.md).
-- No analytics, telemetry, cookies, or third-party scripts (beyond the optional Google Font).
+- No analytics, telemetry, cookies, or third-party scripts. Fonts are self-hosted; the page loads no external assets.
 - Add or update a smoke test for anything you change.
 
 ---

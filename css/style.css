@@ -319,6 +319,9 @@ pre.raw {
 }
 .copy-cell:hover { color: var(--blue); border-color: var(--blue); opacity: 1; }
 
+mark { background: rgba(210,153,34,0.35); color: var(--text); border-radius: 3px; padding: 0 1px; }
+.btn-row label { color: var(--muted); font-size: 0.82rem; display: inline-flex; align-items: center; gap: 0.3rem; }
+
 /* Spinner */
 .spinner {
   display: inline-block;

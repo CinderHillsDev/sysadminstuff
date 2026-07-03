@@ -280,6 +280,32 @@ eq('md5 abc', core.md5('abc'), '900150983cd24fb0d6963f7d28e17f72');
 eq('md5 fox', core.md5('The quick brown fox jumps over the lazy dog'), '9e107d9d372bb6826bd81d3542a419d6');
 eq('md5 utf8', core.md5('héllo'), core.md5('héllo')); // stable
 
+// ================= core.js: cloud helpers =================
+eq('provider cloudfront', core.matchProvider('d111.cloudfront.net'), 'Amazon CloudFront');
+eq('provider m365 mx', core.matchProvider('contoso-com.mail.protection.outlook.com'), 'Microsoft 365 (Exchange Online)');
+eq('provider google workspace', core.matchProvider('aspmx.l.google.com'), 'Google Workspace');
+eq('provider route53 ns', core.matchProvider('ns-1234.awsdns-56.org'), 'AWS Route 53');
+eq('provider azure dns', core.matchProvider('ns1-01.azure-dns.com'), 'Azure DNS');
+eq('provider fastly', core.matchProvider('x.fastly.net'), 'Fastly');
+eq('provider none', core.matchProvider('example.com'), null);
+eq('cloud org amazon', core.classifyCloudOrg('Amazon Technologies Inc.'), 'AWS');
+eq('cloud org azure', core.classifyCloudOrg('MICROSOFT-CORP-MSN-AS-BLOCK'), 'Microsoft Azure');
+eq('cloud org google', core.classifyCloudOrg('Google LLC'), 'Google Cloud');
+eq('cloud org none', core.classifyCloudOrg('Some Local ISP'), null);
+
+const arn = core.parseArn('arn:aws:iam::123456789012:role/MyRole');
+eq('arn partition', arn.partition, 'aws');
+eq('arn service', arn.service, 'iam');
+eq('arn region global', arn.region, '(global)');
+eq('arn account', arn.account, '123456789012');
+eq('arn resource', arn.resource, 'role/MyRole');
+eq('arn s3 with colons', core.parseArn('arn:aws:s3:::my-bucket/path/to/obj').resource, 'my-bucket/path/to/obj');
+eq('arn invalid', core.parseArn('not-an-arn'), null);
+
+// AWS account ID from access key — verified public vector
+eq('aws key -> account', core.awsAccountFromKey('ASIAY34FZKBOKMUTVV7A'), '609629065308');
+eq('aws key bad', core.awsAccountFromKey('nope'), null);
+
 // ---- report ----
 const total = passed + failures.length;
 if (failures.length) {
