@@ -17,6 +17,19 @@ const MAX_URL_LENGTH = 2048;
 // navigation do not. Accept only same-origin (and same-site for subdomains).
 const ALLOWED_FETCH_SITE = new Set(['same-origin', 'same-site']);
 
+// Edge-cache successful GET responses per endpoint, so repeated lookups of the
+// same domain/IP are served from Cloudflare's cache and never re-hit the
+// upstream (crt.sh, bgpview, RDAP, Microsoft, …). Seconds. 0/absent = no cache.
+const CACHE_TTL = {
+  '/api/crtsh': 3600,
+  '/api/asn': 3600,
+  '/api/whois': 3600,
+  '/api/tenant': 3600,
+  '/api/rbl': 600,
+  '/api/tls': 600,
+  '/api/headers': 300,
+};
+
 export async function onRequest(context) {
   const { request, next } = context;
   const url = new URL(request.url);
@@ -38,7 +51,31 @@ export async function onRequest(context) {
       return json({ error: 'This API is only available from the sysadminstuff.net web app.' }, 403);
     }
   }
-  return next();
+
+  const ttl = CACHE_TTL[url.pathname];
+  if (request.method !== 'GET' || !ttl) return next();
+
+  // Cache keyed by URL only (so all users share it); auth headers are irrelevant.
+  const cache = caches.default;
+  const cacheKey = new Request(url.toString(), { method: 'GET' });
+  const hit = await cache.match(cacheKey);
+  if (hit) {
+    const headers = new Headers(hit.headers);
+    headers.set('X-Cache', 'HIT');
+    return new Response(hit.body, { status: hit.status, headers });
+  }
+
+  const res = await next();
+  if (res.status === 200) {
+    const body = await res.arrayBuffer();
+    const headers = new Headers(res.headers);
+    headers.set('Cache-Control', `public, max-age=${ttl}`);
+    headers.set('X-Cache', 'MISS');
+    const out = new Response(body, { status: 200, headers });
+    context.waitUntil(cache.put(cacheKey, out.clone()));
+    return out;
+  }
+  return res; // never cache errors (4xx/5xx)
 }
 
 function json(body, status) {

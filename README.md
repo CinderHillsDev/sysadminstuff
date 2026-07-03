@@ -113,6 +113,7 @@ Hosting is effectively free: static files are unlimited on Pages, and the Functi
 The real concern is abuse of the API endpoints — several proxy third-party services (`/api/crtsh`, `/api/rbl`, `/api/asn`, `/api/tenant`, `/api/headers`, `/api/tls`) that could rate-limit or ban your IP under load. Two defenses:
 
 1. **Code-level (already in the repo):** `functions/_middleware.js` restricts `/api/*` to read methods (POST → 405), rejects oversized URLs, and **requires a same-origin browser fetch** (`Sec-Fetch-Site`) — so `curl`, scripts, and other sites are turned away with a 403. It's stateless, so it's free and always on. (This stops casual/scripted abuse; a determined attacker can still forge the header, which is what the rate-limit rule below is for.)
+   It also **edge-caches** successful GET responses per endpoint (crtsh/asn/whois/tenant 1h, rbl/tls 10m, headers 5m) via Cloudflare's Cache API, so repeated lookups of the same domain/IP are served from cache and never re-hit the upstream. Responses carry `X-Cache: HIT|MISS`.
 2. **Rate limiting (set this up once, free):** In the Cloudflare dashboard for the zone → **Security → WAF → Rate limiting rules → Create rule**:
    - **If incoming requests match:** `URI Path` `contains` `/api/`
    - **Rate:** `20` requests per `10` seconds, counting by client IP

@@ -140,6 +140,17 @@ async function main() {
     const { status } = await getJson('/api/rbl?ip=notanip');
     ok('rbl bad ip 400', status === 400);
   }
+  // Edge caching: a repeated identical lookup should be served from cache.
+  {
+    const url = '/api/rbl?ip=8.8.4.4';
+    const r1 = await fetch(BASE + url, { headers: { 'Sec-Fetch-Site': 'same-origin' } });
+    if (r1.status === 200) {
+      const r2 = await fetch(BASE + url, { headers: { 'Sec-Fetch-Site': 'same-origin' } });
+      ok('rbl second request is cache HIT', r2.headers.get('x-cache') === 'HIT', `x-cache=${r2.headers.get('x-cache')}`);
+    } else {
+      ok('rbl second request is cache HIT', true, 'skipped — first request not 200');
+    }
+  }
   {
     const { status } = await getJson('/api/rbl?ip=192.168.1.1');
     ok('rbl blocks RFC1918 400', status === 400);
