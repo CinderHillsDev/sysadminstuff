@@ -25,12 +25,13 @@ export async function onRequest(context) {
   const params = new URL(request.url).searchParams;
   let host = (params.get('host') || '').trim();
   if (!host) return json({ error: 'Missing host parameter.' }, 400);
-  // Always canonicalize via the WHATWG URL parser so alternate IP encodings
+  // Canonicalize via the WHATWG URL parser so alternate IPv4 encodings
   // (127.1, 2130706433, 0x7f000001, 0177.0.0.1) normalize to dotted-quad before
-  // the SSRF guard sees them — otherwise they'd slip past isBlockedHost.
+  // the SSRF guard sees them. IPv6 literals are unsupported and rejected below —
+  // the regex forbids ':' so no IPv6 form (bracketed, bare, or expanded) can
+  // reach connect() and slip past isBlockedHost.
   try { host = new URL(/^https?:\/\//i.test(host) ? host : 'https://' + host).hostname; } catch (e) { /* fall through to validation */ }
-  host = host.replace(/^\[|\]$/g, '');
-  if (!/^[a-zA-Z0-9.:-]+$/.test(host)) return json({ error: 'Invalid hostname.' }, 400);
+  if (!/^[a-zA-Z0-9.-]+$/.test(host)) return json({ error: 'Invalid hostname.' }, 400);
   // Only ever probe the HTTPS port. Accepting an arbitrary port would turn this
   // into an internal port scanner; the UI only ever checks 443.
   const port = 443;
@@ -38,12 +39,10 @@ export async function onRequest(context) {
   if (isBlockedHost(host)) return json({ error: 'Refusing to probe internal or reserved addresses.' }, 400);
 
   const issues = [];
-  const versions = [];
-  let cert = null;
   let handshakeOK = false;
 
-  // Probe a TLS handshake. A successful secureEstablished means a modern TLS
-  // stack (Workers negotiates TLS 1.2/1.3) completed and the cert chain is valid.
+  // Probe a TLS handshake. Success means Workers' modern TLS stack (1.2/1.3)
+  // completed AND the certificate chain validated (secureTransport: 'on').
   try {
     const socket = connect({ hostname: host, port }, { secureTransport: 'on', allowHalfOpen: false });
     await Promise.race([
@@ -51,8 +50,6 @@ export async function onRequest(context) {
       new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
     ]);
     handshakeOK = true;
-    const info = socket.opened && (await socket.opened);
-    if (info && info.alpn) { /* alpn present */ }
     try { await socket.close(); } catch (e) { /* ignore */ }
   } catch (e) {
     const msg = String(e && e.message || e);
@@ -61,21 +58,16 @@ export async function onRequest(context) {
     else issues.push('TLS handshake failed: ' + msg);
   }
 
-  // Workers only offers TLS 1.2 / 1.3 to origins and validates the chain, so a
-  // successful handshake implies at least TLS 1.2 with a valid certificate.
-  versions.push({ version: 'TLS 1.3', supported: handshakeOK, cipher: handshakeOK ? 'negotiated by platform' : '' });
-  versions.push({ version: 'TLS 1.2', supported: handshakeOK, cipher: handshakeOK ? 'negotiated by platform' : '' });
-  versions.push({ version: 'TLS 1.1', supported: false, cipher: '' });
-  versions.push({ version: 'TLS 1.0', supported: false, cipher: '' });
+  // The platform doesn't expose which version was negotiated, only that a modern
+  // handshake succeeded — so report 1.2/1.3 together rather than claiming each.
+  const versions = [
+    { version: 'TLS 1.2 / 1.3', supported: handshakeOK, cipher: handshakeOK ? 'negotiated (exact version not exposed by platform)' : '' },
+    { version: 'TLS 1.0 / 1.1', supported: false, cipher: 'not offered by this client' },
+  ];
 
-  let grade;
-  if (!handshakeOK) grade = 'F';
-  else if (issues.length) grade = 'C';
-  else grade = 'A';
-
-  if (handshakeOK && !issues.length) {
-    issues.length = 0;
-  }
+  // We can only distinguish "modern TLS + valid cert" (A) from "failed" (F);
+  // the platform doesn't surface cipher/version detail for B/C grading.
+  const grade = handshakeOK ? 'A' : 'F';
 
   const res = json({
     host,
@@ -83,9 +75,8 @@ export async function onRequest(context) {
     grade,
     handshakeOK,
     versions,
-    cert,
     issues,
-    note: 'Cloudflare Workers negotiate TLS 1.2/1.3 and validate the certificate chain. Legacy TLS 1.0/1.1 cannot be probed from this platform and are reported as unsupported by policy.',
+    note: 'Cloudflare Workers negotiate TLS 1.2/1.3 and validate the certificate chain; the exact negotiated version and cipher are not exposed, so grading is A (modern TLS + valid cert) or F. Legacy TLS 1.0/1.1 cannot be probed here.',
   });
   // A failed handshake is often transient (timeout / host down); don't cache it.
   if (!handshakeOK) res.headers.set('Cache-Control', 'no-store');

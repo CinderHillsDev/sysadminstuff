@@ -30,6 +30,8 @@ export async function onRequest(context) {
       return json({ error: `crt.sh returned ${res.status}. It is often slow or rate-limited — try again shortly.` }, 502);
     }
     const text = await res.text();
+    // crt.sh returns 200 with an empty body when a domain has zero certs.
+    if (!text.trim()) return json([]);
     let data;
     try { data = JSON.parse(text); } catch (e) { return json({ error: 'crt.sh returned an unexpected response. Try again shortly.' }, 502); }
     return json(data);

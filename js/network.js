@@ -88,7 +88,7 @@ async function runGeo(query, panel) {
     const conn = d.connection || {};
     const flag = (d.flag && d.flag.emoji) || (d.country_code ? countryFlag(d.country_code) : '');
     const rows = [
-      ['IP', d.ip], ['Country', `${flag} ${d.country || ''} (${d.country_code || ''})`.trim()],
+      ['IP', d.ip], ['Country', (d.country || d.country_code) ? `${flag} ${d.country || ''} (${d.country_code || ''})`.trim() : ''],
       ['Region', d.region], ['City', d.city],
       ['ISP', conn.isp], ['Org', conn.org], ['ASN', conn.asn ? `AS${conn.asn}` : ''],
       ['Timezone', d.timezone && d.timezone.id],

@@ -6,10 +6,27 @@ const TYPE_NUM = { 1: 'A', 2: 'NS', 5: 'CNAME', 6: 'SOA', 12: 'PTR', 15: 'MX', 1
 let dnsSelectedType = 'A';
 
 function reverseInAddr(ip) {
+  ip = (ip || '').trim();
   if (window.isIPv4(ip)) {
-    return ip.trim().split('.').reverse().join('.') + '.in-addr.arpa';
+    return ip.split('.').reverse().join('.') + '.in-addr.arpa';
   }
-  return ip; // IPv6 reverse omitted for brevity
+  if (window.isIPv6(ip) && !ip.includes('.')) { // (skip IPv4-embedded forms)
+    // Expand :: and any short groups to 32 nibbles, reverse, join with dots.
+    const dbl = ip.split('::');
+    let groups;
+    if (dbl.length === 2) {
+      const left = dbl[0] ? dbl[0].split(':') : [];
+      const right = dbl[1] ? dbl[1].split(':') : [];
+      groups = [...left, ...Array(8 - left.length - right.length).fill('0'), ...right];
+    } else {
+      groups = ip.split(':');
+    }
+    if (groups.length === 8) {
+      const nibbles = groups.map((g) => g.padStart(4, '0')).join('');
+      return nibbles.split('').reverse().join('.') + '.ip6.arpa';
+    }
+  }
+  return ip;
 }
 
 function typeName(n) { return TYPE_NUM[n] || String(n); }

@@ -206,7 +206,11 @@ function maybeRun(force = false) {
 }
 
 function activate(tab, sub, { pushUrl = true, force = false } = {}) {
+  // Validate against the DOM so a stale/hand-edited URL (?tab=bogus, or a sub
+  // that belongs to another tab) can't leave the page blank — fall back instead.
+  if (!document.getElementById(`tab-${tab}`)) tab = 'dns';
   sub = sub || DEFAULT_SUBTAB[tab] || '';
+  if (!document.getElementById(`panel-${tab}-${sub}`)) sub = DEFAULT_SUBTAB[tab] || sub;
   state.tab = tab;
   state.sub = sub;
   setActiveTab(tab);

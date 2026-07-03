@@ -19,16 +19,20 @@
   function isIP(str) { return isIPv4(str) || isIPv6(str); }
   function isDomain(str) {
     str = (str || '').trim();
-    return /^(?=.{1,253}$)(?!-)([a-zA-Z0-9-]{1,63}\.)+[a-zA-Z]{2,63}$/.test(str);
+    // Each label must start and end with an alphanumeric (no leading/trailing '-').
+    return /^(?=.{1,253}$)([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/.test(str);
   }
   function isCIDR(str) {
     str = (str || '').trim();
     const [ip, bits] = str.split('/');
-    if (bits === undefined || bits === '') return false;
+    if (!/^\d{1,2}$/.test(bits || '')) return false; // reject '24.0', '0x10', ''
     const b = Number(bits);
-    return isIPv4(ip) && Number.isInteger(b) && b >= 0 && b <= 32;
+    return isIPv4(ip) && b >= 0 && b <= 32;
   }
-  function isASN(str) { return /^(as)?\d{1,10}$/i.test((str || '').trim()); }
+  function isASN(str) {
+    const m = /^(as)?(\d{1,10})$/i.exec((str || '').trim());
+    return !!m && Number(m[2]) <= 4294967295; // 32-bit ASN max
+  }
   // Private / reserved / non-publicly-routable addresses. Mirrors the server-side
   // isBlockedHost() in lib/parse.mjs. Covers RFC1918 and the other non-public
   // IPv4 ranges, plus IPv6 loopback/ULA/link-local. Looking these up against
@@ -191,21 +195,33 @@
 
   // ---------- chmod / Unix permissions ----------
   const PERM_MAP = ['---', '--x', '-w-', '-wx', 'r--', 'r-x', 'rw-', 'rwx'];
+  // setuid (4000) / setgid (2000) / sticky (1000) mark the exec slot of
+  // owner/group/other as s/s/t (exec set) or S/S/T (exec cleared).
   function chmodToSymbolic(octal) {
     const s = String(octal).trim().replace(/^0o?/i, '');
     if (!/^[0-7]{3,4}$/.test(s)) return null;
-    return s.slice(-3).split('').map((d) => PERM_MAP[Number(d)]).join('');
+    const special = s.length === 4 ? Number(s[0]) : 0;
+    const sym = s.slice(-3).split('').map((d) => PERM_MAP[Number(d)]).join('').split('');
+    if (special & 4) sym[2] = sym[2] === 'x' ? 's' : 'S'; // setuid -> owner exec slot
+    if (special & 2) sym[5] = sym[5] === 'x' ? 's' : 'S'; // setgid -> group exec slot
+    if (special & 1) sym[8] = sym[8] === 'x' ? 't' : 'T'; // sticky -> other exec slot
+    return sym.join('');
   }
   function chmodToOctal(symbolic) {
     let s = String(symbolic).trim();
     if (s.length === 10) s = s.slice(1); // tolerate a leading type char (e.g. '-rwxr-xr-x')
     if (!/^[rwxsStT-]{9}$/.test(s)) return null;
-    let out = '';
-    for (let i = 0; i < 9; i += 3) {
-      const g = s.slice(i, i + 3);
-      out += (g[0] === 'r' ? 4 : 0) + (g[1] === 'w' ? 2 : 0) + ('xsStT'.includes(g[2]) ? 1 : 0);
+    let special = 0, out = '';
+    for (let i = 0; i < 3; i++) {
+      const g = s.slice(i * 3, i * 3 + 3);
+      const e = g[2];
+      // lowercase s/t means exec IS set; uppercase S/T means exec is NOT set.
+      out += (g[0] === 'r' ? 4 : 0) + (g[1] === 'w' ? 2 : 0) + (e === 'x' || e === 's' || e === 't' ? 1 : 0);
+      if (i === 0 && (e === 's' || e === 'S')) special += 4;
+      if (i === 1 && (e === 's' || e === 'S')) special += 2;
+      if (i === 2 && (e === 't' || e === 'T')) special += 1;
     }
-    return out;
+    return special ? String(special) + out : out;
   }
   function chmodDescribe(octal) {
     const sym = chmodToSymbolic(octal);
@@ -217,18 +233,30 @@
       const can = [];
       if (g[0] === 'r') can.push('read');
       if (g[1] === 'w') can.push('write');
-      if (g[2] === 'x') can.push('execute');
+      if ('xsStT'.includes(g[2]) && g[2] !== 'S' && g[2] !== 'T') can.push('execute');
+      else if (g[2] === 'S' || g[2] === 'T') can.push('no execute');
       lines.push(`${who[i]}: ${can.length ? can.join(', ') : 'no access'}`);
     }
+    const s = String(octal).trim().replace(/^0o?/i, '');
+    const special = s.length === 4 ? Number(s[0]) : 0;
+    if (special & 4) lines.push('setuid (runs as file owner)');
+    if (special & 2) lines.push('setgid (runs as file group)');
+    if (special & 1) lines.push('sticky bit (only owners may delete)');
     return { symbolic: sym, lines };
   }
 
   // ---------- number base conversion (BigInt-safe) ----------
   function parseInBase(str, base) {
-    let s = String(str).trim().toLowerCase().replace(/^0x|^0o|^0b/, '').replace(/[\s_]/g, '');
-    if (!s) return null;
+    let s = String(str).trim().toLowerCase();
     let neg = false;
     if (s[0] === '-') { neg = true; s = s.slice(1); }
+    // Strip a prefix only when it matches the declared base (so '0x10' isn't
+    // silently read as decimal 10, and '-0x1f' hex parses like '-1f').
+    if (base === 16 && s.startsWith('0x')) s = s.slice(2);
+    else if (base === 8 && s.startsWith('0o')) s = s.slice(2);
+    else if (base === 2 && s.startsWith('0b')) s = s.slice(2);
+    s = s.replace(/[\s_]/g, '');
+    if (!s) return null;
     const digits = '0123456789abcdefghijklmnopqrstuvwxyz';
     let n = 0n; const b = BigInt(base);
     for (const ch of s) {
@@ -619,8 +647,9 @@
   }
   function buildDmarc(o) {
     o = o || {};
-    const parts = ['v=DMARC1', 'p=' + (o.policy || 'none')];
-    if (o.subPolicy && o.subPolicy !== o.policy) parts.push('sp=' + o.subPolicy);
+    const policy = o.policy || 'none';
+    const parts = ['v=DMARC1', 'p=' + policy];
+    if (o.subPolicy && o.subPolicy !== policy) parts.push('sp=' + o.subPolicy);
     if (o.pct !== undefined && o.pct !== '' && Number(o.pct) !== 100) parts.push('pct=' + o.pct);
     if (o.rua) parts.push('rua=mailto:' + o.rua);
     if (o.ruf) parts.push('ruf=mailto:' + o.ruf);

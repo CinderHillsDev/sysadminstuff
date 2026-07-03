@@ -28,6 +28,7 @@ async function runHTTPHeaders(query, panel) {
   try {
     const chain = await fetchChain(url);
     const final = Array.isArray(chain) ? chain[chain.length - 1] : chain;
+    if (!final || !final.headers) { window.showError(panel, 'No response headers were returned for that URL.'); return; }
     const headers = final.headers || {};
     const keys = Object.keys(headers).sort();
     const allRows = keys.map((k) => `<tr><td>${window.escapeHtml(k)}</td><td>${window.escapeHtml(headers[k])}</td></tr>`).join('');

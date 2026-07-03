@@ -37,10 +37,15 @@ check('isIP accepts v4', core.isIP('8.8.8.8'));
 check('isIP accepts v6', core.isIP('::1'));
 check('isIP rejects garbage', !core.isIP('not-an-ip'));
 check('isDomain valid', core.isDomain('example.com'));
+check('isDomain rejects trailing-hyphen label', !core.isDomain('ab-.com'));
+check('isDomain rejects leading-hyphen label', !core.isDomain('a.-b.com'));
+check('isDomain allows internal hyphen', core.isDomain('a-b.example.com'));
 check('isDomain sub', core.isDomain('a.b.example.co.uk'));
 check('isDomain rejects space', !core.isDomain('exa mple.com'));
 check('isDomain rejects bare tld', !core.isDomain('localhost'));
 check('isCIDR valid', core.isCIDR('10.0.0.0/8'));
+check('isCIDR rejects 24.0 bits', !core.isCIDR('1.2.3.0/24.0'));
+check('isCIDR rejects 0x10 bits', !core.isCIDR('1.2.3.0/0x10'));
 check('isCIDR rejects /33', !core.isCIDR('10.0.0.0/33'));
 check('isCIDR rejects no bits', !core.isCIDR('10.0.0.0'));
 // isPrivateIP — RFC1918 + other non-public ranges (client-side guard)
@@ -62,6 +67,8 @@ check('private fd00 ULA v6', core.isPrivateIP('fd00::1'));
 check('public v6 not private', !core.isPrivateIP('2606:4700::1111'));
 
 check('isASN AS-prefixed', core.isASN('AS13335'));
+check('isASN rejects >32bit', !core.isASN('9999999999'));
+check('isASN accepts 32bit max', core.isASN('4294967295'));
 check('isASN bare', core.isASN('13335'));
 check('isASN rejects word', !core.isASN('cloudflare'));
 check('isURL bare host', core.isURL('example.com'));
@@ -232,6 +239,15 @@ eq('parseTenantDomains empty', parse.parseTenantDomains('<x/>'), []);
 
 // ================= core.js: chmod =================
 eq('chmod 755 symbolic', core.chmodToSymbolic('755'), 'rwxr-xr-x');
+// setuid/setgid/sticky (special bits)
+eq('chmod 4755 setuid', core.chmodToSymbolic('4755'), 'rwsr-xr-x');
+eq('chmod 4644 setuid no-exec', core.chmodToSymbolic('4644'), 'rwSr--r--');
+eq('chmod 2755 setgid', core.chmodToSymbolic('2755'), 'rwxr-sr-x');
+eq('chmod 1777 sticky', core.chmodToSymbolic('1777'), 'rwxrwxrwt');
+eq('chmod rwsr-xr-x -> 4755', core.chmodToOctal('rwsr-xr-x'), '4755');
+eq('chmod rwSr--r-- -> 4644', core.chmodToOctal('rwSr--r--'), '4644');
+eq('chmod rwxrwxrwt -> 1777', core.chmodToOctal('rwxrwxrwt'), '1777');
+eq('chmod round-trip 4755', core.chmodToOctal(core.chmodToSymbolic('4755')), '4755');
 eq('chmod 644 symbolic', core.chmodToSymbolic('644'), 'rw-r--r--');
 eq('chmod 0755 symbolic', core.chmodToSymbolic('0755'), 'rwxr-xr-x');
 eq('chmod 777 symbolic', core.chmodToSymbolic('777'), 'rwxrwxrwx');
@@ -243,6 +259,9 @@ eq('chmod describe owner', core.chmodDescribe('750').lines[0], 'Owner: read, wri
 
 // ================= core.js: number bases =================
 eq('base 255 dec', core.numberBases('255', 10), { dec: '255', hex: 'ff', oct: '377', bin: '11111111' });
+eq('base 0x10 in base 10 -> null', core.numberBases('0x10', 10), null);
+eq('base -1f hex', core.numberBases('-1f', 16).dec, '-31');
+eq('base -0x1f hex', core.numberBases('-0x1f', 16).dec, '-31');
 eq('base ff hex -> 255', core.numberBases('ff', 16).dec, '255');
 eq('base 0xff strips prefix', core.numberBases('0xff', 16).dec, '255');
 eq('base 1010 bin -> 10', core.numberBases('1010', 2).dec, '10');
@@ -381,6 +400,7 @@ eq('spf build', core.buildSpf({ ip4: ['1.2.3.4'], includes: ['_spf.google.com'],
   'v=spf1 ip4:1.2.3.4 include:_spf.google.com mx -all');
 eq('spf default all', core.buildSpf({}), 'v=spf1 ~all');
 eq('dmarc build', core.buildDmarc({ policy: 'reject', rua: 'r@x.com' }), 'v=DMARC1; p=reject; rua=mailto:r@x.com');
+eq('dmarc no redundant sp=none', core.buildDmarc({ subPolicy: 'none' }), 'v=DMARC1; p=none');
 eq('dmarc pct + sp', core.buildDmarc({ policy: 'quarantine', subPolicy: 'reject', pct: 50 }), 'v=DMARC1; p=quarantine; sp=reject; pct=50');
 eq('cidr contains yes', core.cidrContains('10.0.0.0/8', '10.5.6.7'), true);
 eq('cidr contains no', core.cidrContains('10.0.0.0/8', '11.0.0.1'), false);

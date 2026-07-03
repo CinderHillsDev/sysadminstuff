@@ -20,7 +20,8 @@ export async function onRequest(context) {
   let q = (new URL(request.url).searchParams.get('q') || '').trim();
   if (!q) return json({ error: 'Missing query parameter q.' }, 400);
 
-  const isIP = IPV4.test(q) || q.includes(':');
+  const m4 = IPV4.exec(q);
+  const isIP = (m4 && m4.slice(1).every((o) => Number(o) <= 255)) || q.includes(':');
   if (isIP && isBlockedHost(q)) return json({ error: 'Private or reserved addresses (RFC1918) have no public ASN.' }, 400);
   const asnMatch = /^(as)?(\d{1,10})$/i.exec(q);
 
@@ -33,13 +34,15 @@ export async function onRequest(context) {
     }
     if (asnMatch) {
       const num = asnMatch[2];
+      // Prefixes are best-effort: a network reject (not just !ok) must not throw
+      // away the successful ASN-info result.
       const [infoRes, prefRes] = await Promise.all([
         fetch(`https://api.bgpview.io/asn/${num}`),
-        fetch(`https://api.bgpview.io/asn/${num}/prefixes`),
+        fetch(`https://api.bgpview.io/asn/${num}/prefixes`).catch(() => null),
       ]);
       if (!infoRes.ok) { console.error('bgpview asn failed:', infoRes.status); return json({ error: `bgpview.io returned ${infoRes.status}.` }, 502); }
       const infoData = await infoRes.json();
-      const prefData = prefRes.ok ? await prefRes.json() : null;
+      const prefData = prefRes && prefRes.ok ? await prefRes.json() : null;
       return json(shapeAsn(infoData, prefData, num));
     }
     return json({ error: 'Provide an ASN (AS13335 or 13335) or an IP address.' }, 400);

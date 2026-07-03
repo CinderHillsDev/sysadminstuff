@@ -24,7 +24,8 @@ export async function onRequest(context) {
   const q = (new URL(request.url).searchParams.get('q') || '').trim();
   if (!q) return json({ error: 'Missing query parameter q.' }, 400);
 
-  const isIP = IPV4.test(q) || q.includes(':');
+  const m4 = IPV4.exec(q);
+  const isIP = (m4 && m4.slice(1).every((o) => Number(o) <= 255)) || q.includes(':');
   if (isIP && isBlockedHost(q)) return json({ error: 'Private or reserved addresses (RFC1918) are not publicly registered.' }, 400);
   const target = isIP
     ? `https://rdap.org/ip/${encodeURIComponent(q)}`

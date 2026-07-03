@@ -55,7 +55,7 @@ async function runTenant(query, panel) {
     let domainsCard = '';
     if (d.domains && d.domains.length) {
       const list = d.domains.map((x) => window.escapeHtml(x)).join('\n');
-      domainsCard = window.card(`Tenant domains (${d.domainCount})`,
+      domainsCard = window.card(`Tenant domains (${d.domainCount != null ? d.domainCount : d.domains.length})`,
         `<pre class="raw">${d.domains.map((x) => window.escapeHtml(x)).join('<br>')}</pre>`,
         list);
     }

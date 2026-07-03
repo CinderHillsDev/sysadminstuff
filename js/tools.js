@@ -18,12 +18,15 @@ function runHash(query, panel) {
     <div class="result" id="hash-out"></div>`;
   const inp = panel.querySelector('#hash-in');
   const out = panel.querySelector('#hash-out');
+  let hashSeq = 0;
   const update = async () => {
     const v = inp.value;
+    const mine = ++hashSeq;
     if (!v) { out.innerHTML = ''; return; }
     const [s1, s256, s384, s512] = await Promise.all([
       shaHex('SHA-1', v), shaHex('SHA-256', v), shaHex('SHA-384', v), shaHex('SHA-512', v),
     ]);
+    if (mine !== hashSeq) return; // a newer keystroke superseded this digest
     const rows = [
       ['MD5', window.md5(v)], ['SHA-1', s1], ['SHA-256', s256], ['SHA-384', s384], ['SHA-512', s512],
     ].map(([k, h]) => `<tr><td>${k}</td><td class="data-cell"><span class="data-val">${h}</span><button class="copy-cell" data-copy="${h}" title="Copy">⧉</button></td></tr>`).join('');
@@ -97,7 +100,8 @@ function runEpoch(query, panel) {
     </div>
     <div class="result" id="epoch-out"></div>`;
   const nowEl = panel.querySelector('#epoch-now');
-  const tick = () => { nowEl.textContent = `Current Unix time: ${Math.floor(Date.now() / 1000)}`; };
+  // Only tick while this panel is the visible one (avoids updating a hidden node).
+  const tick = () => { if (panel.classList.contains('active')) nowEl.textContent = `Current Unix time: ${Math.floor(Date.now() / 1000)}`; };
   tick(); panel._epochTimer = setInterval(tick, 1000);
   const out = panel.querySelector('#epoch-out');
   const conv = () => {
@@ -105,7 +109,13 @@ function runEpoch(query, panel) {
     if (!v) { out.innerHTML = ''; return; }
     let parts;
     if (/^-?\d+$/.test(v)) parts = window.epochToParts(v);
-    else { const d = new Date(v); parts = isNaN(d.getTime()) ? null : window.epochToParts(d.getTime()); }
+    else {
+      // A parsed date is already in ms — build parts directly rather than passing
+      // ms through epochToParts (whose seconds-vs-ms heuristic would mis-scale
+      // dates before ~1973).
+      const d = new Date(v);
+      parts = isNaN(d.getTime()) ? null : { ms: d.getTime(), seconds: Math.floor(d.getTime() / 1000), iso: d.toISOString(), utc: d.toUTCString() };
+    }
     if (!parts) { window.showError(out, 'Enter a Unix timestamp or a parseable date.'); return; }
     const d = new Date(parts.ms);
     const rows = [

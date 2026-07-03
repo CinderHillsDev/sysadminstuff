@@ -38,11 +38,14 @@ async function runSPF(query, panel) {
         : desc;
       return `<tr><td>${window.escapeHtml(t.raw)}</td><td>${window.escapeHtml(t.value || '—')}</td><td>${window.escapeHtml(plain)} <span class="muted">(${window.SPF_QUALIFIERS[t.qualifier]})</span></td></tr>`;
     }).join('');
-    const q = parsed.all || '+';
-    const policy = { '-': ['red', 'Strict — unauthorized senders are rejected (-all).'],
-      '~': ['yellow', 'Soft — unauthorized senders are marked but usually accepted (~all).'],
-      '?': ['grey', 'Neutral — no strong assertion (?all).'],
-      '+': ['red', 'Permissive — this authorizes everything (+all). Not recommended.'] }[q] || ['grey', 'No explicit all mechanism.'];
+    // parsed.all is null when the record has no `all` term — don't fall back to
+    // '+' (which would wrongly claim the record authorizes everything).
+    const policy = parsed.all === null
+      ? ['grey', 'No explicit "all" mechanism — the effective default is neutral (?all).']
+      : ({ '-': ['red', 'Strict — unauthorized senders are rejected (-all).'],
+        '~': ['yellow', 'Soft — unauthorized senders are marked but usually accepted (~all).'],
+        '?': ['grey', 'Neutral — no strong assertion (?all).'],
+        '+': ['red', 'Permissive — this authorizes everything (+all). Not recommended.'] }[parsed.all]);
     window.showResult(panel,
       `<div class="summary ${policy[0]}">${window.escapeHtml(policy[1])}</div>` +
       window.card('Raw SPF record', `<pre class="raw">${window.escapeHtml(spf)}</pre>`, spf) +
@@ -121,8 +124,7 @@ async function doDKIM(domain, panel) {
       const [k, ...v] = seg.trim().split('=');
       if (k) tags[k.trim().toLowerCase()] = (v.join('=') || '').trim();
     });
-    const pubLen = tags.p ? Math.round(tags.p.replace(/[^A-Za-z0-9+/=]/g, '').length * 6 / 8 * 8) : 0;
-    const bits = tags.p ? `~${Math.round(tags.p.length * 6 / 8)} bytes` : '—';
+    const bits = tags.p ? `~${Math.round(tags.p.length * 6 / 8)} bytes encoded` : '—';
     const rows = [
       ['v', tags.v || 'DKIM1', 'Version'],
       ['k', tags.k || 'rsa', 'Key type'],
@@ -130,7 +132,8 @@ async function doDKIM(domain, panel) {
       // Values come straight from a DKIM TXT record — escape every one uniformly.
       ['p', tags.p ? `${tags.p.slice(0, 32)}… (${bits})` : '(empty — key revoked)', 'Public key'],
     ].map(([k, v, d]) => `<tr><td>${window.escapeHtml(k)}</td><td>${window.escapeHtml(String(v))}</td><td>${window.escapeHtml(d)}</td></tr>`).join('');
-    const warn = /(^|;|,|\s)t=y/i.test('t=' + (tags.t || ''))
+    // t is a colon-separated flag list; testing mode is present if 'y' is any flag.
+    const warn = (tags.t || '').split(':').map((f) => f.trim().toLowerCase()).includes('y')
       ? `<div class="summary yellow">Testing mode (t=y) — DKIM failures won't affect delivery.</div>` : '';
     out.innerHTML =
       warn +
@@ -148,7 +151,7 @@ async function runMX(query, panel) {
   try {
     const data = await window.dohQuery(domain, 'MX');
     const mx = (data.Answer || []).filter((a) => a.type === 15).map((a) => {
-      const [prio, host] = a.data.split(/\s+/);
+      const [prio, host = ''] = String(a.data).split(/\s+/); // guard malformed rdata
       return { prio: Number(prio), host: host.replace(/\.$/, '') };
     }).sort((a, b) => a.prio - b.prio);
     if (!mx.length) { panel.innerHTML = `<div class="summary grey">No MX records found for ${window.escapeHtml(domain)}.</div>`; return; }
@@ -210,7 +213,9 @@ function analyzeHeaders(panel) {
   const received = get('Received').reverse();
   let prevTime = null;
   const hops = received.map((r, i) => {
-    const dm = /;\s*(.+)$/.exec(r);
+    // The timestamp is the last ';'-delimited segment; earlier ';' can appear
+    // inside comments/clauses, so anchor on the final segment, not the first.
+    const dm = /;\s*([^;]+)$/.exec(r);
     const time = dm ? new Date(dm[1].trim()) : null;
     let delay = '';
     if (time && prevTime && !isNaN(time) && !isNaN(prevTime)) {

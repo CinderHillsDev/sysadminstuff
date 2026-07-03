@@ -88,8 +88,11 @@ function decodeJWT(token, out) {
   // Guard against hostile payloads: a non-object payload, or an out-of-range exp,
   // must not throw (which would silently freeze the live-updating decoder).
   let expNote = '';
-  const exp = payload && typeof payload === 'object' ? payload.exp : undefined;
-  if (typeof exp === 'number' && isFinite(exp)) {
+  const rawExp = payload && typeof payload === 'object' ? payload.exp : undefined;
+  // Accept a number or a numeric string (some issuers emit exp as a string).
+  const exp = typeof rawExp === 'number' ? rawExp
+    : (typeof rawExp === 'string' && rawExp.trim() !== '' ? Number(rawExp) : NaN);
+  if (isFinite(exp)) {
     const expDate = new Date(exp * 1000);
     if (!isNaN(expDate.getTime())) {
       const expired = expDate < new Date();
