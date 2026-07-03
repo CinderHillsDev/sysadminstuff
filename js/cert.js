@@ -71,9 +71,13 @@ function historyBlock(certs, domain) {
 }
 
 // ---------- Decode a pasted PEM certificate or CSR (100% client-side) ----------
+// rows: [label, displayHtml, copyText?]. A copy button is shown only when an
+// explicit plain-text copyText is given (no HTML-stripping guesswork).
 function kv(rows) {
-  return `<table><tbody>${rows.filter(([, v]) => v != null && v !== '').map(([k, v]) =>
-    `<tr><td>${k}</td><td class="data-cell"><span class="data-val">${v}</span><button class="copy-cell" data-copy="${window.escapeHtml(String(v).replace(/<[^>]+>/g, ''))}" title="Copy">⧉</button></td></tr>`).join('')}</tbody></table>`;
+  return `<table><tbody>${rows.filter(([, v]) => v != null && v !== '').map(([k, v, copy]) => {
+    const btn = copy != null ? `<button class="copy-cell" data-copy="${window.escapeHtml(String(copy))}" title="Copy">⧉</button>` : '';
+    return `<tr><td>${k}</td><td class="data-cell"><span class="data-val">${v}</span>${btn}</td></tr>`;
+  }).join('')}</tbody></table>`;
 }
 function keyDesc(c) {
   if (c.keyAlgo === 'RSA') return `RSA ${c.keySize}-bit`;
@@ -92,14 +96,14 @@ function renderCert(c, out) {
     : remaining <= 30 ? '<span class="badge yellow">EXPIRING SOON</span>' : '<span class="badge green">VALID</span>';
   out.innerHTML = window.card('Certificate', kv([
     ['Status', `${badge} ${remaining >= 0 ? remaining + ' days left' : Math.abs(remaining) + ' days ago'}`],
-    ['Subject', window.escapeHtml(c.subject)],
-    ['Issuer', window.escapeHtml(c.issuer)],
-    ['SANs', sansHtml(c.sans)],
-    ['Serial', c.serial],
-    ['Valid from', nb.toISOString().replace('.000', '')],
-    ['Valid to', na.toISOString().replace('.000', '')],
-    ['Public key', window.escapeHtml(keyDesc(c))],
-    ['Signature', window.escapeHtml(c.sigAlgo)],
+    ['Subject', window.escapeHtml(c.subject), c.subject],
+    ['Issuer', window.escapeHtml(c.issuer), c.issuer],
+    ['SANs', sansHtml(c.sans), (c.sans || []).join('\n')],
+    ['Serial', window.escapeHtml(c.serial), c.serial],
+    ['Valid from', nb.toISOString().replace('.000', ''), nb.toISOString().replace('.000', '')],
+    ['Valid to', na.toISOString().replace('.000', ''), na.toISOString().replace('.000', '')],
+    ['Public key', window.escapeHtml(keyDesc(c)), keyDesc(c)],
+    ['Signature', window.escapeHtml(c.sigAlgo), c.sigAlgo],
   ]));
   window.wireCopyButtons(out);
 }
@@ -108,10 +112,10 @@ function renderCsr(c, out) {
   out.innerHTML =
     `<div class="summary blue">Certificate Signing Request</div>` +
     window.card('CSR', kv([
-      ['Subject', window.escapeHtml(c.subject)],
-      ['Requested SANs', sansHtml(c.sans)],
-      ['Public key', window.escapeHtml(keyDesc(c))],
-      ['Signature', window.escapeHtml(c.sigAlgo)],
+      ['Subject', window.escapeHtml(c.subject), c.subject],
+      ['Requested SANs', sansHtml(c.sans), (c.sans || []).join('\n')],
+      ['Public key', window.escapeHtml(keyDesc(c)), keyDesc(c)],
+      ['Signature', window.escapeHtml(c.sigAlgo), c.sigAlgo],
     ]));
   window.wireCopyButtons(out);
 }

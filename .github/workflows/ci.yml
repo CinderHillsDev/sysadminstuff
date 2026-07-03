@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege: this workflow only reads the repo (checkout).
+permissions:
+  contents: read
+
 jobs:
   smoke:
     name: Smoke tests (pure logic)
