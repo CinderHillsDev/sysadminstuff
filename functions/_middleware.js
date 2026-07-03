@@ -1,7 +1,8 @@
 // functions/_middleware.js — cheap, stateless hardening that runs before every
-// API handler. This is NOT a rate limiter (that needs shared state — configure a
-// Cloudflare Rate Limiting rule on /api/* in the dashboard; see README). It just
-// shrinks the abuse surface: only read methods on the API, and reject absurd URLs.
+// API handler. Several endpoints proxy third-party services (crt.sh, bgpview,
+// Spamhaus, Microsoft), so we don't want people driving them directly with curl
+// or scripts and getting our IP rate-limited or banned. This shrinks the abuse
+// surface; volume abuse still needs a Cloudflare Rate Limiting rule (see README).
 //
 // No user input is logged.
 
@@ -12,6 +13,9 @@ const CORS = {
 };
 const ALLOWED_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const MAX_URL_LENGTH = 2048;
+// Browser fetches from our own pages set this; curl / other sites / direct
+// navigation do not. Accept only same-origin (and same-site for subdomains).
+const ALLOWED_FETCH_SITE = new Set(['same-origin', 'same-site']);
 
 export async function onRequest(context) {
   const { request, next } = context;
@@ -25,6 +29,14 @@ export async function onRequest(context) {
   }
   if (!ALLOWED_METHODS.has(request.method)) {
     return json({ error: `Method ${request.method} not allowed.` }, 405);
+  }
+  // Require a same-origin browser fetch (blocks curl/scripts/other origins). The
+  // preflight (OPTIONS) is exempt so CORS still works.
+  if (request.method !== 'OPTIONS') {
+    const site = request.headers.get('Sec-Fetch-Site');
+    if (!ALLOWED_FETCH_SITE.has(site)) {
+      return json({ error: 'This API is only available from the sysadminstuff.net web app.' }, 403);
+    }
   }
   return next();
 }

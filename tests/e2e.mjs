@@ -26,7 +26,8 @@ function okUpstream(name, status, cond, detail) {
 }
 
 async function getJson(path) {
-  const res = await fetch(BASE + path, { headers: { Accept: 'application/json' } });
+  // Emulate a same-origin browser fetch (the middleware requires Sec-Fetch-Site).
+  const res = await fetch(BASE + path, { headers: { Accept: 'application/json', 'Sec-Fetch-Site': 'same-origin' } });
   const text = await res.text();
   let json = null;
   try { json = JSON.parse(text); } catch (e) { /* leave null */ }
@@ -54,6 +55,11 @@ async function main() {
   {
     const res = await fetch(BASE + '/api/whois', { method: 'OPTIONS' });
     ok('OPTIONS /api/whois preflight', res.status === 200 && res.headers.get('access-control-allow-origin') === '*');
+  }
+  // Anti-abuse: a curl-style request (no Sec-Fetch-Site) to the API is rejected
+  {
+    const res = await fetch(BASE + '/api/whois?q=example.com'); // no Sec-Fetch-Site header
+    ok('API rejects non-browser request (403)', res.status === 403);
   }
 
   // whois (domain) — RDAP (live registry)

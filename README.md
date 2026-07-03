@@ -110,9 +110,9 @@ node tests/e2e.mjs                  # in another (defaults to http://localhost:8
 
 Hosting is effectively free: static files are unlimited on Pages, and the Functions run on the Workers **free tier — a hard 100,000 requests/day cap that fails closed** (the API tools return errors past the limit; they never bill you). Stay on the free plan and there is no surprise-bill scenario.
 
-The real concern is abuse of the API endpoints (`/api/headers` fetches URLs, `/api/tls` opens sockets, `/api/rbl` fans out). Two defenses:
+The real concern is abuse of the API endpoints — several proxy third-party services (`/api/crtsh`, `/api/rbl`, `/api/asn`, `/api/tenant`, `/api/headers`, `/api/tls`) that could rate-limit or ban your IP under load. Two defenses:
 
-1. **Code-level (already in the repo):** `functions/_middleware.js` restricts `/api/*` to read methods and rejects oversized URLs. It's stateless, so it's free and always on.
+1. **Code-level (already in the repo):** `functions/_middleware.js` restricts `/api/*` to read methods (POST → 405), rejects oversized URLs, and **requires a same-origin browser fetch** (`Sec-Fetch-Site`) — so `curl`, scripts, and other sites are turned away with a 403. It's stateless, so it's free and always on. (This stops casual/scripted abuse; a determined attacker can still forge the header, which is what the rate-limit rule below is for.)
 2. **Rate limiting (set this up once, free):** In the Cloudflare dashboard for the zone → **Security → WAF → Rate limiting rules → Create rule**:
    - **If incoming requests match:** `URI Path` `contains` `/api/`
    - **Rate:** `20` requests per `10` seconds, counting by client IP
