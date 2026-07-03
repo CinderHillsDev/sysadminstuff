@@ -158,5 +158,58 @@ async function doPropagation(query, panel, type) {
   out.innerHTML = summary + window.card(`${type} propagation`, table);
 }
 
+// ---------- CAA ----------
+async function runCAA(query, panel) {
+  const domain = window.hostFromInput(query);
+  window.showLoading(panel, 'Looking up CAA…');
+  try {
+    const data = await window.dohQuery(domain, 'CAA');
+    const records = (data.Answer || []).filter((a) => a.type === 257)
+      .map((a) => window.parseCaaRdata(a.data)).filter(Boolean);
+    if (!records.length) {
+      panel.innerHTML = `<div class="summary yellow">No CAA records for ${window.escapeHtml(domain)} — <strong>any</strong> CA may issue certificates. Add a CAA record to restrict this.</div>`;
+      return;
+    }
+    const issuers = records.filter((r) => r.tag === 'issue' || r.tag === 'issuewild').map((r) => r.value || '(none — issuance forbidden)');
+    const rows = records.map((r) =>
+      `<tr><td>${r.flags}</td><td><span class="badge ${r.tag.startsWith('issue') ? 'green' : 'grey'}">${window.escapeHtml(r.tag)}</span></td><td>${window.escapeHtml(r.value || '—')}</td></tr>`
+    ).join('');
+    panel.innerHTML =
+      `<div class="summary green">Certificate issuance restricted to: ${window.escapeHtml([...new Set(issuers)].join(', ') || 'see below')}.</div>` +
+      window.card('CAA records', `<table><thead><tr><th>Flags</th><th>Tag</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>`);
+  } catch (e) {
+    window.showError(panel, `Could not reach the DNS resolver. ${e.message || ''}`.trim());
+  }
+}
+
+// ---------- DNSSEC ----------
+async function runDNSSEC(query, panel) {
+  const domain = window.hostFromInput(query);
+  window.showLoading(panel, 'Checking DNSSEC…');
+  try {
+    const [a, ds, dnskey] = await Promise.all([
+      window.dohQuery(domain, 'A'), window.dohQuery(domain, 'DS'), window.dohQuery(domain, 'DNSKEY'),
+    ]);
+    const authenticated = a.AD === true;
+    const dsRecords = (ds.Answer || []).filter((x) => x.type === 43).map((x) => x.data);
+    const dnskeyCount = (dnskey.Answer || []).filter((x) => x.type === 48).length;
+    const signed = authenticated || dsRecords.length > 0;
+    const summary = signed
+      ? `<div class="summary green">✓ DNSSEC is enabled${authenticated ? ' and the answer validated (AD flag set)' : ''}.</div>`
+      : `<div class="summary yellow">⚠ DNSSEC not detected — the zone appears unsigned.</div>`;
+    const rows = [
+      ['Authenticated Data (AD) flag', authenticated ? '<span class="ok">set — resolver validated the answer</span>' : '<span class="warn">not set</span>'],
+      ['DS records (in parent zone)', dsRecords.length ? `<span class="ok">${dsRecords.length}</span>` : '<span class="warn">none</span>'],
+      ['DNSKEY records', dnskeyCount ? `<span class="ok">${dnskeyCount}</span>` : '<span class="warn">none</span>'],
+    ].map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+    const dsList = dsRecords.length ? window.card('DS records', `<pre class="raw">${dsRecords.map((d) => window.escapeHtml(d)).join('<br>')}</pre>`) : '';
+    panel.innerHTML = summary + window.card(`DNSSEC — ${domain}`, `<table><tbody>${rows}</tbody></table>`) + dsList;
+  } catch (e) {
+    window.showError(panel, `Could not reach the DNS resolver. ${e.message || ''}`.trim());
+  }
+}
+
 window.registerRunner('dns', 'lookup', runDNSLookup);
 window.registerRunner('dns', 'propagation', runDNSPropagation);
+window.registerRunner('dns', 'caa', runCAA);
+window.registerRunner('dns', 'dnssec', runDNSSEC);

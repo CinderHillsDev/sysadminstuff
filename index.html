@@ -37,10 +37,14 @@
     <div id="tab-dns" class="tab-panel active">
       <nav class="tabs secondary">
         <button class="subtab active" data-subtab="lookup" data-tip="Query DNS records of any type via Cloudflare DoH">Lookup</button>
-        <button class="subtab" data-subtab="propagation" data-tip="Compare a record across 5 public resolvers to check propagation">Propagation</button>
+        <button class="subtab" data-subtab="propagation" data-tip="Compare a record across public resolvers to check propagation">Propagation</button>
+        <button class="subtab" data-subtab="caa" data-tip="Which CAs may issue certs for this domain">CAA</button>
+        <button class="subtab" data-subtab="dnssec" data-tip="Is the zone DNSSEC-signed and validated?">DNSSEC</button>
       </nav>
       <div class="subpanel active" id="panel-dns-lookup"></div>
       <div class="subpanel" id="panel-dns-propagation"></div>
+      <div class="subpanel" id="panel-dns-caa"></div>
+      <div class="subpanel" id="panel-dns-dnssec"></div>
     </div>
 
     <!-- Email -->

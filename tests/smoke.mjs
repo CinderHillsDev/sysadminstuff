@@ -306,6 +306,11 @@ eq('arn invalid', core.parseArn('not-an-arn'), null);
 eq('aws key -> account', core.awsAccountFromKey('ASIAY34FZKBOKMUTVV7A'), '609629065308');
 eq('aws key bad', core.awsAccountFromKey('nope'), null);
 
+// CAA rdata (RFC3597 hex + parsed forms)
+eq('caa hex issue', core.parseCaaRdata('\\# 15 00 05 69 73 73 75 65 70 6b 69 2e 67 6f 6f 67'), { flags: 0, tag: 'issue', value: 'pki.goog' });
+eq('caa parsed form', core.parseCaaRdata('0 issue "letsencrypt.org"'), { flags: 0, tag: 'issue', value: 'letsencrypt.org' });
+eq('caa bad', core.parseCaaRdata('garbage'), null);
+
 // ---- report ----
 const total = passed + failures.length;
 if (failures.length) {

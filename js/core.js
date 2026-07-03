@@ -394,6 +394,26 @@
     return hex(a) + hex(b) + hex(c) + hex(d);
   }
 
+  // ---------- CAA rdata ----------
+  // Cloudflare DoH returns CAA in RFC 3597 generic form: "\# 15 00 05 69 73 73..."
+  // (len + hex bytes: flags, tag-length, tag, value). Some resolvers return the
+  // already-parsed form: 0 issue "letsencrypt.org".
+  function parseCaaRdata(data) {
+    const s = String(data || '').trim();
+    const hm = /^\\#\s+\d+\s+([0-9a-fA-F ]+)$/.exec(s);
+    if (hm) {
+      const bytes = hm[1].trim().split(/\s+/).map((h) => parseInt(h, 16));
+      if (bytes.length < 2 || bytes.some((b) => isNaN(b))) return null;
+      const tagLen = bytes[1];
+      const tag = String.fromCharCode(...bytes.slice(2, 2 + tagLen));
+      const value = String.fromCharCode(...bytes.slice(2 + tagLen));
+      return { flags: bytes[0], tag, value };
+    }
+    const pm = /^(\d+)\s+([a-z0-9]+)\s+"?([^"]*)"?$/i.exec(s);
+    if (pm) return { flags: Number(pm[1]), tag: pm[2].toLowerCase(), value: pm[3] };
+    return null;
+  }
+
   // ---------- Cloud helpers ----------
   // Provider fingerprint from a hostname (CNAME / MX / NS targets).
   const PROVIDER_PATTERNS = [
@@ -485,7 +505,7 @@
 
   const api = {
     isIPv4, isIPv6, isIP, isDomain, isCIDR, isASN, isURL, normalizeURL, isPrivateIP,
-    matchProvider, classifyCloudOrg, parseArn, awsAccountFromKey, base32DecodeBytes,
+    matchProvider, classifyCloudOrg, parseArn, awsAccountFromKey, base32DecodeBytes, parseCaaRdata,
     ipToInt, intToIp, maskToBits, subnetInfo, parseCidrInput,
     b64EncodeUtf8, b64DecodeUtf8, looksLikeBase64, b64urlDecode, decodeJwtParts,
     parseSpf, SPF_QUALIFIERS, parseDmarcTags,
