@@ -4,7 +4,7 @@
 const SHARED_INPUT_TABS = new Set(['dns', 'email', 'web', 'network', 'cert', 'whois', 'm365', 'cloud']);
 
 // Subtabs that live under a shared-input tab but are self-contained (need no query).
-const NO_QUERY_SUBTABS = new Set(['email:headers', 'network:subnet', 'cloud:awskey', 'cloud:arn']);
+const NO_QUERY_SUBTABS = new Set(['email:headers', 'network:subnet', 'cloud:awskey', 'cloud:arn', 'cert:decode']);
 
 // Default subtab per tab (matches the .active markup in index.html)
 const DEFAULT_SUBTAB = {
@@ -12,7 +12,7 @@ const DEFAULT_SUBTAB = {
   email: 'spf',
   web: 'httpheaders',
   network: 'asn',
-  cert: 'main',
+  cert: 'lookup',
   whois: 'main',
   m365: 'main',
   cloud: 'ip',

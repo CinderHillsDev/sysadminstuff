@@ -311,6 +311,69 @@ eq('caa hex issue', core.parseCaaRdata('\\# 15 00 05 69 73 73 75 65 70 6b 69 2e 
 eq('caa parsed form', core.parseCaaRdata('0 issue "letsencrypt.org"'), { flags: 0, tag: 'issue', value: 'letsencrypt.org' });
 eq('caa bad', core.parseCaaRdata('garbage'), null);
 
+// ================= core.js: X.509 certificate parsing =================
+const TEST_CERT = `-----BEGIN CERTIFICATE-----
+MIIDkzCCAnugAwIBAgIUQnrvthQu1/FlASvD3vWbtgW/J6AwDQYJKoZIhvcNAQEL
+BQAwPjEZMBcGA1UEAwwQdGVzdC5leGFtcGxlLmNvbTEUMBIGA1UECgwLRXhhbXBs
+ZSBPcmcxCzAJBgNVBAYTAlVTMB4XDTI2MDcwMzAxMDY1M1oXDTM2MDYzMDAxMDY1
+M1owPjEZMBcGA1UEAwwQdGVzdC5leGFtcGxlLmNvbTEUMBIGA1UECgwLRXhhbXBs
+ZSBPcmcxCzAJBgNVBAYTAlVTMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKC
+AQEA4idnVDh4qwPohdmEGTHXwqJxcQEvjU6DU0paUtgVh2mopbCb3AZbSw+D+lQ0
+GBAHTropLGBIEmXnJg46zMSOP6O5DRSuVmlifOEaDESN1IcF2YTmC5z9CLmOlCo+
+HrhTjeV1ft2RyvGFp/IOmQxyB1OSELwGFQGcutfg6jH6iv2VB1v0fgZwAj5NYgxH
+x+LsGqZ7ygqoUKO9bKlPV9E/9lkNzG4NwdbwCcj6rFMUrLheMAZJ7CjVrjS3MIjl
+ckYnDhdEn3x5n0G25B424Idc5cuZPq/3k6ftZg7rdc4OzHRPFI74KfAnOkE5pqPR
+mDL3DK8XEmvC9djccXksxYA9hQIDAQABo4GIMIGFMB0GA1UdDgQWBBTnYixnBhez
+/WX9qag8VXUDpnMTmTAfBgNVHSMEGDAWgBTnYixnBhez/WX9qag8VXUDpnMTmTAP
+BgNVHRMBAf8EBTADAQH/MDIGA1UdEQQrMCmCEHRlc3QuZXhhbXBsZS5jb22CD3d3
+dy5leGFtcGxlLmNvbYcECgAAATANBgkqhkiG9w0BAQsFAAOCAQEAhjOYTz/zukl6
+WnWciQR3uHyW9rvRHD6xb65VHHX0FKEt/4DWdRGn5qNdA9gHnwFNrBJayKvCGY6U
+O53wjwmD+xxEF0TMjmmnGVh286m5Ficqby0NsASFTUUaXrVpPzsJsxW+HxHWm3KS
+vklQalJFVGVjX1vlSGP5du/qQv3xwAI7PztnS95oaBPKZhykQ80Kp01dpqxYOXaV
+tjXJ91Rdcg75jwkWd3x+0qmaEnO5a613ZMORhmD29BFP1LFj/vnIrhd0zvRcmNRj
+YmzW9rdc1Z42+g8YI7hrRd8p3z0d1+tLn9wfHp/ld+YQhfXQRxV/E6TwmX4j4eY3
+D58MRpcPjA==
+-----END CERTIFICATE-----`;
+const cert1 = core.parseCertificate(TEST_CERT);
+check('cert parses', cert1 !== null);
+check('cert subject CN', cert1.subject.includes('CN=test.example.com'));
+check('cert subject O', cert1.subject.includes('O=Example Org'));
+eq('cert serial', cert1.serial, '427AEFB6142ED7F165012BC3DEF59BB605BF27A0');
+eq('cert notBefore', cert1.notBefore, '2026-07-03T01:06:53.000Z');
+eq('cert notAfter', cert1.notAfter, '2036-06-30T01:06:53.000Z');
+eq('cert SANs', cert1.sans, ['DNS:test.example.com', 'DNS:www.example.com', 'IP:10.0.0.1']);
+eq('cert keyAlgo', cert1.keyAlgo, 'RSA');
+eq('cert keySize', cert1.keySize, 2048);
+eq('cert sigAlgo', cert1.sigAlgo, 'SHA256-RSA');
+eq('cert bad input', core.parseCertificate('not a cert'), null);
+
+const TEST_CSR = `-----BEGIN CERTIFICATE REQUEST-----
+MIICvTCCAaUCAQAwOjEYMBYGA1UEAwwPY3NyLmV4YW1wbGUuY29tMREwDwYDVQQK
+DAhDU1IgVGVzdDELMAkGA1UEBhMCVVMwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAw
+ggEKAoIBAQD0o9EhuO/ccZMMtLFZABCzYnD4/iiH5lEdKAtBfsQYlNTyJe323pat
+ZsX6STPAsHHW2oOF550V+F4qfffH/axwpgoeWvoPBVcsOSlRi7pspIYIApyid8zv
+aEfsnpii3Sgzf+JGa6YWkkk8fjmhjPX9HiUtLCukjOlUzYIjYdF2/APqlKGioWZG
+rlrHJ0JaLMAxlYLlBI6v5ngS3sAICAaKVt8aGcgR2lDGdJ6x6rgXl59OMX+lg/9u
+8RzMKViP+L7d8PtI0zrmLOZMsqaziT1wp1t1/wA1zJY5TvZTWVNWdHuOAS+0hfmD
+qso0p8jQPUqCS8CII+JB3CExwOPwcIejAgMBAAGgPjA8BgkqhkiG9w0BCQ4xLzAt
+MCsGA1UdEQQkMCKCD2Nzci5leGFtcGxlLmNvbYIPYWx0LmV4YW1wbGUuY29tMA0G
+CSqGSIb3DQEBCwUAA4IBAQBGUjDQpLUyfhxuEObU+jahgxAkh2yyntNetu4RxynF
+ynjLg/AzMcY/ZiXN37bNYef+W6YtEJ5IibLX+D9WGUPUj7fExRg4h16HVQFvVKQI
+kQv+Dd3DxK7VxEfm+6i9E+QIDH6Vncjp2yCCxFnsvGzIFc3yvX8jT6AhhekYk0qr
+GQkvehYbREJpzcsI1SWC4o9HBloglmqdeagN7NhW85tNjelA6ghRWBpoWOSDgAt+
+vGVpXpzs1EznQ5O9XPMqJw4HGaGLWsnOJRjfmZjX1YgRtQXJk4Ua2hQ20An1Wbqy
+JwmH+bTUGnveAJMzlN9f5q8HcGL0OciDEAHlWb+ZUjVy
+-----END CERTIFICATE REQUEST-----`;
+const csr1 = core.parseCsr(TEST_CSR);
+check('csr parses', csr1 !== null);
+check('csr subject CN', csr1.subject.includes('CN=csr.example.com'));
+check('csr subject O', csr1.subject.includes('O=CSR Test'));
+eq('csr SANs', csr1.sans, ['DNS:csr.example.com', 'DNS:alt.example.com']);
+eq('csr keyAlgo', csr1.keyAlgo, 'RSA');
+eq('csr keySize', csr1.keySize, 2048);
+eq('csr sigAlgo', csr1.sigAlgo, 'SHA256-RSA');
+eq('csr bad', core.parseCsr('nope'), null);
+
 // ---- report ----
 const total = passed + failures.length;
 if (failures.length) {

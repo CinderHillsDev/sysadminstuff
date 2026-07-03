@@ -93,7 +93,12 @@
 
     <!-- Cert -->
     <div id="tab-cert" class="tab-panel">
-      <div class="subpanel active" id="panel-cert-main"></div>
+      <nav class="tabs secondary">
+        <button class="subtab active" data-subtab="lookup" data-tip="Certificate history from crt.sh">Lookup</button>
+        <button class="subtab" data-subtab="decode" data-tip="Decode a pasted PEM cert or CSR — never uploaded">Decode PEM/CSR</button>
+      </nav>
+      <div class="subpanel active" id="panel-cert-lookup"></div>
+      <div class="subpanel" id="panel-cert-decode"></div>
     </div>
 
     <!-- Whois -->

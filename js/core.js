@@ -394,6 +394,210 @@
     return hex(a) + hex(b) + hex(c) + hex(d);
   }
 
+  // ---------- X.509 certificate decoding (PEM/DER, pure) ----------
+  const X509_OIDS = {
+    '2.5.4.3': 'CN', '2.5.4.6': 'C', '2.5.4.7': 'L', '2.5.4.8': 'ST', '2.5.4.10': 'O',
+    '2.5.4.11': 'OU', '2.5.4.5': 'serialNumber', '1.2.840.113549.1.9.1': 'E',
+    '1.2.840.113549.1.1.1': 'RSA', '1.2.840.10045.2.1': 'EC',
+    '1.2.840.113549.1.1.11': 'SHA256-RSA', '1.2.840.113549.1.1.5': 'SHA1-RSA',
+    '1.2.840.113549.1.1.13': 'SHA512-RSA', '1.2.840.10045.4.3.2': 'ECDSA-SHA256',
+    '1.2.840.10045.4.3.3': 'ECDSA-SHA384',
+    '1.2.840.10045.3.1.7': 'P-256', '1.3.132.0.34': 'P-384', '1.3.132.0.35': 'P-521',
+  };
+  function pemToBytes(pem) {
+    const b64 = String(pem || '').replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+    if (!b64) return null;
+    let bin; try { bin = _atob(b64); } catch (e) { return null; }
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i) & 0xff;
+    return arr;
+  }
+  function readTLV(buf, pos) {
+    if (pos + 1 >= buf.length) return null;
+    const tag = buf[pos];
+    let len = buf[pos + 1], hdr = 2;
+    if (len & 0x80) {
+      const n = len & 0x7f; len = 0;
+      for (let i = 0; i < n; i++) len = (len << 8) | buf[pos + 2 + i];
+      hdr = 2 + n;
+    }
+    return { tag, start: pos + hdr, end: pos + hdr + len, len, next: pos + hdr + len };
+  }
+  function derOID(buf, start, end) {
+    const first = buf[start];
+    let s = Math.floor(first / 40) + '.' + (first % 40), val = 0;
+    for (let i = start + 1; i < end; i++) {
+      val = (val * 128) + (buf[i] & 0x7f);
+      if (!(buf[i] & 0x80)) { s += '.' + val; val = 0; }
+    }
+    return s;
+  }
+  function derStr(buf, start, end) {
+    let s = ''; for (let i = start; i < end; i++) s += String.fromCharCode(buf[i]);
+    try { return decodeURIComponent(escape(s)); } catch (e) { return s; }
+  }
+  function parseName(buf, start, end) {
+    const parts = []; let pos = start;
+    while (pos < end) {
+      const set = readTLV(buf, pos); if (!set) break;
+      let sp = set.start;
+      while (sp < set.end) {
+        const atv = readTLV(buf, sp); if (!atv) break;
+        const oid = readTLV(buf, atv.start);
+        const val = readTLV(buf, oid.next);
+        const name = X509_OIDS[derOID(buf, oid.start, oid.end)] || derOID(buf, oid.start, oid.end);
+        parts.push(`${name}=${derStr(buf, val.start, val.end)}`);
+        sp = atv.next;
+      }
+      pos = set.next;
+    }
+    return parts.join(', ');
+  }
+  function parseTime(buf, tlv) {
+    const s = derStr(buf, tlv.start, tlv.end);
+    let year, rest;
+    if (tlv.tag === 0x17) { const yy = parseInt(s.slice(0, 2), 10); year = yy >= 50 ? 1900 + yy : 2000 + yy; rest = s.slice(2); }
+    else { year = parseInt(s.slice(0, 4), 10); rest = s.slice(4); }
+    return new Date(Date.UTC(year, +rest.slice(0, 2) - 1, +rest.slice(2, 4), +rest.slice(4, 6), +rest.slice(6, 8), +rest.slice(8, 10)));
+  }
+  function parseSANs(buf, seqStart, seqEnd) {
+    const out = []; let pos = seqStart;
+    while (pos < seqEnd) {
+      const gn = readTLV(buf, pos); if (!gn) break;
+      if (gn.tag === 0x82) out.push('DNS:' + derStr(buf, gn.start, gn.end));       // dNSName
+      else if (gn.tag === 0x81) out.push('email:' + derStr(buf, gn.start, gn.end)); // rfc822
+      else if (gn.tag === 0x86) out.push('URI:' + derStr(buf, gn.start, gn.end));   // URI
+      else if (gn.tag === 0x87) {                                                    // iPAddress
+        const n = gn.end - gn.start;
+        if (n === 4) out.push('IP:' + [buf[gn.start], buf[gn.start + 1], buf[gn.start + 2], buf[gn.start + 3]].join('.'));
+        else { const p = []; for (let i = 0; i < n; i += 2) p.push(((buf[gn.start + i] << 8) | buf[gn.start + i + 1]).toString(16)); out.push('IP:' + p.join(':')); }
+      }
+      pos = gn.next;
+    }
+    return out;
+  }
+  function spkiInfo(buf, spki) {
+    const algoSeq = readTLV(buf, spki.start);
+    const algoOid = readTLV(buf, algoSeq.start);
+    const keyAlgo = X509_OIDS[derOID(buf, algoOid.start, algoOid.end)] || 'unknown';
+    let keySize = null;
+    const bitStr = readTLV(buf, algoSeq.next);
+    if (keyAlgo === 'RSA' && bitStr) {
+      const rsaSeq = readTLV(buf, bitStr.start + 1); // skip unused-bits byte
+      const modulus = readTLV(buf, rsaSeq.start);
+      let mlen = modulus.len; if (buf[modulus.start] === 0) mlen -= 1;
+      keySize = mlen * 8;
+    } else if (keyAlgo === 'EC') {
+      const curveOid = readTLV(buf, algoOid.next);
+      keySize = X509_OIDS[derOID(buf, curveOid.start, curveOid.end)] || 'EC';
+    }
+    return { keyAlgo, keySize };
+  }
+  // Find a SAN list inside a SEQUENCE OF Extension starting at extSeqStart.
+  function sansFromExtensions(buf, extSeqStart, extSeqEnd) {
+    let ep = extSeqStart;
+    while (ep < extSeqEnd) {
+      const e = readTLV(buf, ep);
+      const eoid = readTLV(buf, e.start);
+      if (derOID(buf, eoid.start, eoid.end) === '2.5.29.17') {
+        const maybeCrit = readTLV(buf, eoid.next);
+        const octet = maybeCrit.tag === 0x01 ? readTLV(buf, maybeCrit.next) : maybeCrit;
+        const sanSeq = readTLV(buf, octet.start);
+        return parseSANs(buf, sanSeq.start, sanSeq.end);
+      }
+      ep = e.next;
+    }
+    return [];
+  }
+  function parseCertificate(pem) {
+    const buf = pemToBytes(pem);
+    if (!buf) return null;
+    try {
+      const cert = readTLV(buf, 0); if (!cert || cert.tag !== 0x30) return null;
+      const tbs = readTLV(buf, cert.start); if (!tbs || tbs.tag !== 0x30) return null;
+      let pos = tbs.start;
+      let cur = readTLV(buf, pos);
+      if (cur.tag === 0xa0) { pos = cur.next; cur = readTLV(buf, pos); } // skip version [0]
+      // serialNumber
+      let serialBytes = []; for (let i = cur.start; i < cur.end; i++) serialBytes.push(buf[i]);
+      if (serialBytes.length > 1 && serialBytes[0] === 0) serialBytes = serialBytes.slice(1);
+      const serial = serialBytes.map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+      pos = cur.next;
+      const sigInner = readTLV(buf, pos); pos = sigInner.next;                 // signature algo (skip)
+      const issuer = readTLV(buf, pos); pos = issuer.next;
+      const validity = readTLV(buf, pos); pos = validity.next;
+      const nb = readTLV(buf, validity.start);
+      const na = readTLV(buf, nb.next);
+      const subject = readTLV(buf, pos); pos = subject.next;
+      const spki = readTLV(buf, pos); pos = spki.next;
+      const { keyAlgo: keyAlgoName, keySize } = spkiInfo(buf, spki);
+      // extensions [3] -> SANs
+      let sans = [];
+      while (pos < tbs.end) {
+        const ext = readTLV(buf, pos); if (!ext) break;
+        if (ext.tag === 0xa3) {
+          const extSeq = readTLV(buf, ext.start);
+          sans = sansFromExtensions(buf, extSeq.start, extSeq.end);
+        }
+        pos = ext.next;
+      }
+      // signatureAlgorithm (cert level)
+      const sigAlgSeq = readTLV(buf, tbs.next);
+      const sigAlgOid = readTLV(buf, sigAlgSeq.start);
+      const sigAlgo = X509_OIDS[derOID(buf, sigAlgOid.start, sigAlgOid.end)] || derOID(buf, sigAlgOid.start, sigAlgOid.end);
+
+      return {
+        subject: parseName(buf, subject.start, subject.end),
+        issuer: parseName(buf, issuer.start, issuer.end),
+        serial,
+        notBefore: parseTime(buf, nb).toISOString(),
+        notAfter: parseTime(buf, na).toISOString(),
+        sans,
+        keyAlgo: keyAlgoName,
+        keySize,
+        sigAlgo,
+      };
+    } catch (e) { return null; }
+  }
+
+  // PKCS#10 CSR — subject, key, requested SANs, signature algorithm. No issuer/validity.
+  function parseCsr(pem) {
+    const buf = pemToBytes(pem);
+    if (!buf) return null;
+    try {
+      const req = readTLV(buf, 0); if (!req || req.tag !== 0x30) return null;
+      const cri = readTLV(buf, req.start); if (!cri || cri.tag !== 0x30) return null;
+      let pos = cri.start;
+      const version = readTLV(buf, pos); pos = version.next;   // INTEGER (skip)
+      const subject = readTLV(buf, pos); pos = subject.next;
+      const spki = readTLV(buf, pos); pos = spki.next;
+      const { keyAlgo, keySize } = spkiInfo(buf, spki);
+      // attributes [0] -> extensionRequest (1.2.840.113549.1.9.14) -> SANs
+      let sans = [];
+      while (pos < cri.end) {
+        const attr = readTLV(buf, pos); if (!attr) break;
+        if (attr.tag === 0xa0) {
+          let ap = attr.start;
+          while (ap < attr.end) {
+            const a = readTLV(buf, ap);
+            const aoid = readTLV(buf, a.start);
+            if (derOID(buf, aoid.start, aoid.end) === '1.2.840.113549.1.9.14') {
+              const valSet = readTLV(buf, aoid.next);       // SET
+              const extSeq = readTLV(buf, valSet.start);    // SEQ OF Extension
+              sans = sansFromExtensions(buf, extSeq.start, extSeq.end);
+            }
+            ap = a.next;
+          }
+        }
+        pos = attr.next;
+      }
+      const sigAlgSeq = readTLV(buf, cri.next);
+      const sigOid = readTLV(buf, sigAlgSeq.start);
+      const sigAlgo = X509_OIDS[derOID(buf, sigOid.start, sigOid.end)] || derOID(buf, sigOid.start, sigOid.end);
+      return { subject: parseName(buf, subject.start, subject.end), keyAlgo, keySize, sigAlgo, sans };
+    } catch (e) { return null; }
+  }
+
   // ---------- CAA rdata ----------
   // Cloudflare DoH returns CAA in RFC 3597 generic form: "\# 15 00 05 69 73 73..."
   // (len + hex bytes: flags, tag-length, tag, value). Some resolvers return the
@@ -506,6 +710,7 @@
   const api = {
     isIPv4, isIPv6, isIP, isDomain, isCIDR, isASN, isURL, normalizeURL, isPrivateIP,
     matchProvider, classifyCloudOrg, parseArn, awsAccountFromKey, base32DecodeBytes, parseCaaRdata,
+    parseCertificate, parseCsr,
     ipToInt, intToIp, maskToBits, subnetInfo, parseCidrInput,
     b64EncodeUtf8, b64DecodeUtf8, looksLikeBase64, b64urlDecode, decodeJwtParts,
     parseSpf, SPF_QUALIFIERS, parseDmarcTags,
