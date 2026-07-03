@@ -51,7 +51,6 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 ### Cloud
 - **Cloud IP** — which cloud owns an IP, with exact AWS region/service (from AWS's published ranges) or ASN-based provider detection for the rest.
 - **Fingerprint** — the hosting/CDN, email, and DNS provider behind a domain (inferred from CNAME/MX/NS). Runs in your browser via DoH.
-- **AWS Key** — derive the owning AWS account ID from an access key ID (`AKIA…`/`ASIA…`), entirely offline.
 - **ARN** — break an AWS ARN into partition/service/region/account/resource.
 
 ### Utils (all client-side, zero network)

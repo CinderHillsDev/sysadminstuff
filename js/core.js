@@ -728,36 +728,9 @@
       resource: parts.slice(5).join(':'),
     };
   }
-  // Derive the AWS account ID from an access key ID (AKIA…/ASIA…). Pure, offline.
-  function base32DecodeBytes(s) {
-    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-    let bits = 0, value = 0; const out = [];
-    for (const c of String(s).toUpperCase().replace(/=+$/, '')) {
-      const idx = alphabet.indexOf(c);
-      if (idx < 0) return null;
-      value = (value << 5) | idx; bits += 5;
-      if (bits >= 8) {
-        bits -= 8;
-        out.push((value >>> bits) & 0xff);
-        value &= (1 << bits) - 1; // keep only pending bits so 32-bit ops don't overflow
-      }
-    }
-    return out;
-  }
-  function awsAccountFromKey(key) {
-    const k = String(key || '').trim().toUpperCase();
-    if (!/^[A-Z0-9]{20}$/.test(k)) return null;
-    const bytes = base32DecodeBytes(k.slice(4, 20)); // 16 base32 chars -> 10 bytes
-    if (!bytes || bytes.length < 6) return null;
-    let z = 0n;
-    for (let i = 0; i < 6; i++) z = (z << 8n) | BigInt(bytes[i]);
-    const acct = (z & 0x7fffffffff80n) >> 7n;
-    return acct.toString().padStart(12, '0');
-  }
-
   const api = {
     isIPv4, isIPv6, isIP, isDomain, isCIDR, isASN, isURL, normalizeURL, isPrivateIP,
-    matchProvider, classifyCloudOrg, parseArn, awsAccountFromKey, base32DecodeBytes, parseCaaRdata,
+    matchProvider, classifyCloudOrg, parseArn, parseCaaRdata,
     parseCertificate, parseCsr,
     buildSpf, buildDmarc, cidrContains, splitCidr,
     ipToInt, intToIp, maskToBits, subnetInfo, parseCidrInput,

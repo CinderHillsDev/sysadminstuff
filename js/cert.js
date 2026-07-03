@@ -5,12 +5,15 @@ async function runCert(query, panel) {
   if (!window.isDomain(domain)) { window.showError(panel, 'Enter a domain name.'); return; }
   window.showLoading(panel, 'Querying crt.sh… (can be slow)');
   try {
-    const res = await fetch(`https://crt.sh/?q=${encodeURIComponent(domain)}&output=json`);
-    if (!res.ok) throw new Error(`crt.sh returned ${res.status}. It is sometimes slow or rate-limited — try again shortly.`);
-    const text = await res.text();
-    let certs;
-    try { certs = JSON.parse(text); } catch (e) { throw new Error('crt.sh returned an unexpected response. Try again shortly.'); }
-    if (!certs.length) { panel.innerHTML = `<div class="summary grey">No certificates found for ${window.escapeHtml(domain)}.</div>`; return; }
+    // Proxied through /api/crtsh because crt.sh sends no CORS headers.
+    const res = await fetch(`/api/crtsh?q=${encodeURIComponent(domain)}`);
+    if (!res.ok) {
+      let msg = `crt.sh returned ${res.status}. It is sometimes slow or rate-limited — try again shortly.`;
+      try { const j = await res.json(); if (j.error) msg = j.error; } catch (e) { /* ignore */ }
+      throw new Error(msg);
+    }
+    let certs = await res.json();
+    if (!Array.isArray(certs) || !certs.length) { panel.innerHTML = `<div class="summary grey">No certificates found for ${window.escapeHtml(domain)}.</div>`; return; }
 
     // De-dupe by cert id, sort by not_after desc
     const seen = new Set();
@@ -20,11 +23,7 @@ async function runCert(query, panel) {
     const primary = certs[0];
     panel.innerHTML = certCard(primary, domain, true) + historyBlock(certs.slice(1, 6), domain);
   } catch (e) {
-    if (/Failed to fetch|NetworkError|Load failed/i.test(e.message)) {
-      window.showError(panel, 'Could not reach crt.sh. It occasionally blocks cross-origin requests or is slow — try again in a moment.');
-    } else {
-      window.showError(panel, e.message || 'Certificate lookup failed.');
-    }
+    window.showError(panel, e.message || 'Certificate lookup failed.');
   }
 }
 

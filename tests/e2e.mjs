@@ -104,6 +104,17 @@ async function main() {
     okUpstream('tenant fake domain -> isTenant false', status, json && json.isTenant === false, JSON.stringify(json && json.isTenant));
   }
 
+  // crt.sh proxy (live)
+  {
+    const { status, json } = await getJson('/api/crtsh?q=example.com');
+    okUpstream('crtsh 200', status, status === 200, `status ${status}`);
+    okUpstream('crtsh returns array', status, Array.isArray(json));
+  }
+  {
+    const { status } = await getJson('/api/crtsh');
+    ok('crtsh no-param 400', status === 400);
+  }
+
   // asn (live bgpview.io)
   {
     const { status, json } = await getJson('/api/asn?q=AS13335');

@@ -100,29 +100,6 @@ async function runFingerprint(query, panel) {
   }
 }
 
-// ---------- AWS access key -> account ID ----------
-function runAwsKey(query, panel) {
-  if (panel.dataset.wired) return;
-  panel.innerHTML = `
-    <div class="privacy-note">Computed entirely in your browser — the key is never sent anywhere.</div>
-    <div class="btn-row">
-      <input class="text-input" id="awskey-in" placeholder="AKIA… / ASIA… access key ID" style="flex:1;min-width:18rem">
-      <button class="btn primary" id="awskey-go">Decode</button>
-    </div>
-    <div class="note">Access key IDs embed the owning AWS account number. Only the account ID is derived — no secret is involved.</div>
-    <div class="result" id="awskey-out"></div>`;
-  const out = panel.querySelector('#awskey-out');
-  const go = () => {
-    const acct = window.awsAccountFromKey(panel.querySelector('#awskey-in').value);
-    if (!acct) { window.showError(out, 'Enter a 20-character access key ID (e.g. AKIA…).'); return; }
-    out.innerHTML = window.card('AWS account ID', `<pre class="raw">${acct}</pre>`, acct);
-    window.wireCopyButtons(out);
-  };
-  panel.querySelector('#awskey-go').addEventListener('click', go);
-  panel.querySelector('#awskey-in').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-  panel.dataset.wired = '1';
-}
-
 // ---------- ARN parser ----------
 function runArn(query, panel) {
   if (panel.dataset.wired) return;
@@ -151,5 +128,4 @@ function runArn(query, panel) {
 
 window.registerRunner('cloud', 'ip', runCloudIP);
 window.registerRunner('cloud', 'fingerprint', runFingerprint);
-window.registerRunner('cloud', 'awskey', runAwsKey);
 window.registerRunner('cloud', 'arn', runArn);
