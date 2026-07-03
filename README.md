@@ -139,7 +139,7 @@ index.html            privacy.html         wrangler.toml
 css/style.css
 js/    core.js app.js dns.js email.js web.js network.js cert.js whois.js m365.js cloud.js utils.js tools.js
 lib/   parse.mjs
-functions/  _middleware.js  api/  whois.js rbl.js tls.js headers.js asn.js tenant.js
+functions/  _middleware.js  api/  whois.js rbl.js tls.js headers.js asn.js tenant.js crtsh.js
 tests/ smoke.mjs e2e.mjs README.md
 ```
 
