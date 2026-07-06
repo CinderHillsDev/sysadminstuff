@@ -70,7 +70,8 @@ function runGen(query, panel) {
         <label class="field-label" style="margin:0">Words <input type="number" id="pp-count" class="text-input" value="5" min="3" max="12" style="width:5rem"></label>
         <label class="field-label" style="margin:0">Separator <input type="text" id="pp-sep" class="text-input" value="-" maxlength="3" style="width:4rem"></label>
         <label><input type="checkbox" id="pp-cap" checked> Capitalize</label>
-        <label><input type="checkbox" id="pp-num"> add a number</label>
+        <label><input type="checkbox" id="pp-num" checked> add a number</label>
+        <label><input type="checkbox" id="pp-sym" checked> add a symbol</label>
         <button class="btn primary" id="pp-go">Generate</button>
       </div>
       <div class="result" id="pp-out"></div>
@@ -103,6 +104,7 @@ function runGen(query, panel) {
     const sep = panel.querySelector('#pp-sep').value;
     const cap = panel.querySelector('#pp-cap').checked;
     const num = panel.querySelector('#pp-num').checked;
+    const sym = panel.querySelector('#pp-sym').checked;
     const picks = [];
     for (let i = 0; i < n; i++) {
       let w = words[randomInt(words.length)];
@@ -111,7 +113,11 @@ function runGen(query, panel) {
     }
     let phrase = picks.join(sep);
     let bits = n * Math.log2(words.length);
-    if (num) { phrase += sep + randomInt(100); bits += Math.log2(100); }
+    // Append a 2-digit number and/or a symbol so the phrase satisfies
+    // number/special-character password policies.
+    if (num) { phrase += sep + (10 + randomInt(90)); bits += Math.log2(90); }
+    const SYMBOLS = '!@#$%^&*?';
+    if (sym) { phrase += SYMBOLS[randomInt(SYMBOLS.length)]; bits += Math.log2(SYMBOLS.length); }
     bits = Math.round(bits * 10) / 10;
     ppOut.innerHTML = window.card('', `<pre class="raw">${window.escapeHtml(phrase)}</pre><div class="summary ${strengthClass(bits)}">~${bits} bits · ${n} words from a ${words.length}-word list</div>`, phrase);
     wire(ppOut);
