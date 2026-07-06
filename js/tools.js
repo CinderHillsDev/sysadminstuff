@@ -374,7 +374,7 @@ function runRegex(query, panel) {
 }
 
 window.registerRunner('utils', 'hash', runHash);
-window.registerRunner('utils', 'gen', runGen);
+window.registerRunner('password', 'main', runGen);
 window.registerRunner('utils', 'epoch', runEpoch);
 window.registerRunner('utils', 'cron', runCron);
 window.registerRunner('utils', 'chmod', runChmod);

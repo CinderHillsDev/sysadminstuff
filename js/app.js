@@ -16,6 +16,7 @@ const DEFAULT_SUBTAB = {
   whois: 'main',
   m365: 'main',
   cloud: 'ip',
+  password: 'main',
   utils: 'base64',
 };
 

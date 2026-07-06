@@ -32,6 +32,7 @@
       <button class="tab" data-tab="whois">Whois</button>
       <button class="tab" data-tab="m365">M365</button>
       <button class="tab" data-tab="cloud">Cloud</button>
+      <button class="tab" data-tab="password">Password</button>
       <button class="tab" data-tab="utils">Utils</button>
     </nav>
 
@@ -129,6 +130,11 @@
       <div class="subpanel" id="panel-cloud-arn"></div>
     </div>
 
+    <!-- Password / Passphrase / UUID generator -->
+    <div id="tab-password" class="tab-panel">
+      <div class="subpanel active" id="panel-password-main"></div>
+    </div>
+
     <!-- Utils — each tool is self-contained, no shared input bar -->
     <div id="tab-utils" class="tab-panel">
       <nav class="tabs secondary">
@@ -136,7 +142,6 @@
         <button class="subtab" data-subtab="urlencode" data-tip="URL encode/decode in your browser">URL Encode</button>
         <button class="subtab" data-subtab="jwt" data-tip="Decode a JWT locally — never sent anywhere">JWT Decoder</button>
         <button class="subtab" data-subtab="hash" data-tip="MD5/SHA hashes, computed in your browser">Hash</button>
-        <button class="subtab" data-subtab="gen" data-tip="Passwords (with an easy-to-read mode), passphrases &amp; UUIDs">Password</button>
         <button class="subtab" data-subtab="epoch" data-tip="Unix timestamp ↔ date converter">Epoch</button>
         <button class="subtab" data-subtab="cron" data-tip="Explain a cron expression + next runs">Cron</button>
         <button class="subtab" data-subtab="chmod" data-tip="chmod octal ↔ symbolic calculator">Chmod</button>
@@ -148,7 +153,6 @@
       <div class="subpanel" id="panel-utils-urlencode"></div>
       <div class="subpanel" id="panel-utils-jwt"></div>
       <div class="subpanel" id="panel-utils-hash"></div>
-      <div class="subpanel" id="panel-utils-gen"></div>
       <div class="subpanel" id="panel-utils-epoch"></div>
       <div class="subpanel" id="panel-utils-cron"></div>
       <div class="subpanel" id="panel-utils-chmod"></div>

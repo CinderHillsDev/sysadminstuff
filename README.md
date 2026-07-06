@@ -53,9 +53,14 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 - **Fingerprint** — the hosting/CDN, email, and DNS provider behind a domain (inferred from CNAME/MX/NS). Runs in your browser via DoH.
 - **ARN** — break an AWS ARN into partition/service/region/account/resource.
 
+### Password (all client-side, zero network)
+- **Password** generator — length + character sets, with an easy-to-read mode that drops ambiguous characters (I l 1 i O 0 o |).
+- **Passphrase** generator — N words from a bundled EFF wordlist, with separator/capitalize/number/symbol options and an entropy readout.
+- **UUID** v4 generator.
+
 ### Utils (all client-side, zero network)
 - **Base64**, **URL Encode**, **JWT Decoder** — encode/decode/inspect locally.
-- **Hash** (MD5, SHA-1/256/384/512), **Password** generator (with an easy-to-read mode that drops ambiguous chars), **Passphrase** generator (bundled EFF wordlist), **UUID**, **Epoch** converter, **Cron** explainer, **Chmod** calculator, **JSON** formatter, **Base Convert** (hex/dec/oct/bin), **Regex** tester. Nothing you type leaves your browser.
+- **Hash** (MD5, SHA-1/256/384/512), **Epoch** converter, **Cron** explainer, **Chmod** calculator, **JSON** formatter, **Base Convert** (hex/dec/oct/bin), **Regex** tester. Nothing you type leaves your browser.
 
 ---
 
