@@ -408,6 +408,12 @@ eq('cidr contains bad', core.cidrContains('nope', '1.2.3.4'), null);
 eq('cidr split /24->/26', core.splitCidr('192.168.1.0/24', 26), ['192.168.1.0/26', '192.168.1.64/26', '192.168.1.128/26', '192.168.1.192/26']);
 eq('cidr split too many', core.splitCidr('10.0.0.0/8', 24), null);
 
+// ================= wordlist (passphrase generator) =================
+const wordlist = require(join(__dirname, '..', 'js', 'wordlist.js'));
+check('wordlist is a large array', Array.isArray(wordlist) && wordlist.length >= 1000);
+check('wordlist all lowercase alpha', wordlist.every((w) => /^[a-z]+$/.test(w)));
+check('wordlist deduped', new Set(wordlist).size === wordlist.length);
+
 // ---- report ----
 const total = passed + failures.length;
 if (failures.length) {

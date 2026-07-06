@@ -45,46 +45,87 @@ function randomInt(max) {
   do { crypto.getRandomValues(a); x = a[0]; } while (x >= limit);
   return x % max;
 }
+// Characters that are easily misread together (I/l/1/i, O/0/o, pipe).
+const AMBIGUOUS = /[Il1ioO0|]/g;
+function strengthClass(bits) { return bits >= 100 ? 'green' : bits >= 60 ? 'yellow' : 'red'; }
+
 function runGen(query, panel) {
   if (panel.dataset.wired) return;
   panel.innerHTML = `
     <div class="privacy-note">Generated in your browser with a cryptographic RNG. Never transmitted.</div>
-    <div class="btn-row">
-      <label class="field-label" style="margin:0">Length <input type="number" id="pw-len" class="text-input" value="20" min="4" max="128" style="width:5rem"></label>
-      <label><input type="checkbox" id="pw-upper" checked> A-Z</label>
-      <label><input type="checkbox" id="pw-lower" checked> a-z</label>
-      <label><input type="checkbox" id="pw-digit" checked> 0-9</label>
-      <label><input type="checkbox" id="pw-sym" checked> symbols</label>
-      <button class="btn primary" id="pw-go">Generate</button>
+    <div class="card"><h3>Random password</h3>
+      <div class="btn-row">
+        <label class="field-label" style="margin:0">Length <input type="number" id="pw-len" class="text-input" value="20" min="4" max="128" style="width:5rem"></label>
+        <label><input type="checkbox" id="pw-upper" checked> A-Z</label>
+        <label><input type="checkbox" id="pw-lower" checked> a-z</label>
+        <label><input type="checkbox" id="pw-digit" checked> 0-9</label>
+        <label><input type="checkbox" id="pw-sym" checked> symbols</label>
+        <label title="Exclude I l 1 i O 0 o | — nothing that can be misread"><input type="checkbox" id="pw-noamb"> avoid ambiguous</label>
+        <button class="btn primary" id="pw-go">Generate</button>
+      </div>
+      <div class="result" id="pw-out"></div>
     </div>
-    <div class="result" id="pw-out"></div>
-    <div class="btn-row" style="margin-top:1rem"><button class="btn" id="uuid-go">Generate UUID v4</button></div>
-    <div class="result" id="uuid-out"></div>`;
-  const out = panel.querySelector('#pw-out');
-  const gen = () => {
+    <div class="card"><h3>Passphrase</h3>
+      <div class="btn-row">
+        <label class="field-label" style="margin:0">Words <input type="number" id="pp-count" class="text-input" value="5" min="3" max="12" style="width:5rem"></label>
+        <label class="field-label" style="margin:0">Separator <input type="text" id="pp-sep" class="text-input" value="-" maxlength="3" style="width:4rem"></label>
+        <label><input type="checkbox" id="pp-cap" checked> Capitalize</label>
+        <label><input type="checkbox" id="pp-num"> add a number</label>
+        <button class="btn primary" id="pp-go">Generate</button>
+      </div>
+      <div class="result" id="pp-out"></div>
+    </div>
+    <div class="card"><h3>UUID</h3>
+      <div class="btn-row"><button class="btn primary" id="uuid-go">Generate UUID v4</button></div>
+      <div class="result" id="uuid-out"></div>
+    </div>`;
+  const pwOut = panel.querySelector('#pw-out');
+  const genPw = () => {
     let pool = '';
     if (panel.querySelector('#pw-upper').checked) pool += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     if (panel.querySelector('#pw-lower').checked) pool += 'abcdefghijklmnopqrstuvwxyz';
     if (panel.querySelector('#pw-digit').checked) pool += '0123456789';
     if (panel.querySelector('#pw-sym').checked) pool += '!@#$%^&*()-_=+[]{};:,.<>?';
+    if (panel.querySelector('#pw-noamb').checked) pool = pool.replace(AMBIGUOUS, '');
     const len = Math.max(4, Math.min(128, Number(panel.querySelector('#pw-len').value) || 20));
-    if (!pool) { window.showError(out, 'Pick at least one character set.'); return; }
+    if (!pool) { window.showError(pwOut, 'Pick at least one character set.'); return; }
     let pw = '';
     for (let i = 0; i < len; i++) pw += pool[randomInt(pool.length)];
     const bits = window.passwordEntropyBits(len, pool.length);
-    const strength = bits >= 100 ? 'green' : bits >= 60 ? 'yellow' : 'red';
-    out.innerHTML = window.card('Password',
-      `<pre class="raw">${window.escapeHtml(pw)}</pre><div class="summary ${strength}">~${bits} bits of entropy</div>`, pw);
-    wire(out);
+    pwOut.innerHTML = window.card('', `<pre class="raw">${window.escapeHtml(pw)}</pre><div class="summary ${strengthClass(bits)}">~${bits} bits of entropy · ${pool.length}-char set</div>`, pw);
+    wire(pwOut);
   };
-  panel.querySelector('#pw-go').addEventListener('click', gen);
+  const ppOut = panel.querySelector('#pp-out');
+  const genPp = () => {
+    const words = window.WORDLIST || [];
+    if (!words.length) { window.showError(ppOut, 'Word list unavailable.'); return; }
+    const n = Math.max(3, Math.min(12, Number(panel.querySelector('#pp-count').value) || 5));
+    const sep = panel.querySelector('#pp-sep').value;
+    const cap = panel.querySelector('#pp-cap').checked;
+    const num = panel.querySelector('#pp-num').checked;
+    const picks = [];
+    for (let i = 0; i < n; i++) {
+      let w = words[randomInt(words.length)];
+      if (cap) w = w[0].toUpperCase() + w.slice(1);
+      picks.push(w);
+    }
+    let phrase = picks.join(sep);
+    let bits = n * Math.log2(words.length);
+    if (num) { phrase += sep + randomInt(100); bits += Math.log2(100); }
+    bits = Math.round(bits * 10) / 10;
+    ppOut.innerHTML = window.card('', `<pre class="raw">${window.escapeHtml(phrase)}</pre><div class="summary ${strengthClass(bits)}">~${bits} bits · ${n} words from a ${words.length}-word list</div>`, phrase);
+    wire(ppOut);
+  };
+  panel.querySelector('#pw-go').addEventListener('click', genPw);
+  panel.querySelector('#pw-noamb').addEventListener('change', genPw);
+  panel.querySelector('#pp-go').addEventListener('click', genPp);
   panel.querySelector('#uuid-go').addEventListener('click', () => {
     const u = crypto.randomUUID();
     const uo = panel.querySelector('#uuid-out');
-    uo.innerHTML = window.card('UUID v4', `<pre class="raw">${u}</pre>`, u);
+    uo.innerHTML = window.card('', `<pre class="raw">${u}</pre>`, u);
     wire(uo);
   });
-  gen();
+  genPw(); genPp();
   panel.dataset.wired = '1';
 }
 

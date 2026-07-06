@@ -55,7 +55,7 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 
 ### Utils (all client-side, zero network)
 - **Base64**, **URL Encode**, **JWT Decoder** — encode/decode/inspect locally.
-- **Hash** (MD5, SHA-1/256/384/512), **Password/UUID** generator, **Epoch** converter, **Cron** explainer, **Chmod** calculator, **JSON** formatter, **Base Convert** (hex/dec/oct/bin), **Regex** tester. Nothing you type leaves your browser.
+- **Hash** (MD5, SHA-1/256/384/512), **Password** generator (with an easy-to-read mode that drops ambiguous chars), **Passphrase** generator (bundled EFF wordlist), **UUID**, **Epoch** converter, **Cron** explainer, **Chmod** calculator, **JSON** formatter, **Base Convert** (hex/dec/oct/bin), **Regex** tester. Nothing you type leaves your browser.
 
 ---
 
