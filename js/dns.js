@@ -89,12 +89,12 @@ async function doLookup(query, panel, type) {
 }
 
 function recordCard(type, rows) {
-  const body = `<table><thead><tr><th>Name</th><th>TTL</th><th>Type</th><th>Data</th></tr></thead><tbody>` +
+  const body = '<table><thead><tr><th>Name</th><th>TTL</th><th>Type</th><th>Data</th></tr></thead><tbody>' +
     rows.map((r) =>
       `<tr><td>${window.escapeHtml(r.name)}</td><td>${r.TTL}</td><td>${type}</td>` +
       `<td class="data-cell"><span class="data-val">${window.escapeHtml(r.data)}</span>` +
       `<button class="copy-cell" data-copy="${window.escapeHtml(r.data)}" title="Copy this record">⧉</button></td></tr>`
-    ).join('') + `</tbody></table>`;
+    ).join('') + '</tbody></table>';
   const copyText = rows.map((r) => `${r.name}\t${r.TTL}\t${type}\t${r.data}`).join('\n');
   return window.card(`${type} records`, body, copyText);
 }
@@ -156,10 +156,10 @@ async function doPropagation(query, panel, type) {
   const consistent = answered.length === results.filter((r) => r.ok).length && signatures.size === 1;
 
   const summary = consistent && answered.length
-    ? `<div class="summary green">✓ Propagated consistently across all reachable resolvers.</div>`
+    ? '<div class="summary green">✓ Propagated consistently across all reachable resolvers.</div>'
     : (answered.length
-        ? `<div class="summary yellow">⚠ Inconsistent — record may still be propagating.</div>`
-        : `<div class="summary grey">No ${type} records returned by any resolver.</div>`);
+      ? '<div class="summary yellow">⚠ Inconsistent — record may still be propagating.</div>'
+      : `<div class="summary grey">No ${type} records returned by any resolver.</div>`);
 
   const rowsHtml = results.map((r) => {
     const answer = !r.ok ? '<span class="err">unreachable</span>'
@@ -213,7 +213,7 @@ async function runDNSSEC(query, panel) {
     const signed = authenticated || dsRecords.length > 0;
     const summary = signed
       ? `<div class="summary green">✓ DNSSEC is enabled${authenticated ? ' and the answer validated (AD flag set)' : ''}.</div>`
-      : `<div class="summary yellow">⚠ DNSSEC not detected — the zone appears unsigned.</div>`;
+      : '<div class="summary yellow">⚠ DNSSEC not detected — the zone appears unsigned.</div>';
     const rows = [
       ['Authenticated Data (AD) flag', authenticated ? '<span class="ok">set — resolver validated the answer</span>' : '<span class="warn">not set</span>'],
       ['DS records (in parent zone)', dsRecords.length ? `<span class="ok">${dsRecords.length}</span>` : '<span class="warn">none</span>'],

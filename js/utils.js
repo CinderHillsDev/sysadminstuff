@@ -74,9 +74,9 @@ function decodeJWT(token, out) {
     if (res.error && res.error.startsWith('expected 3 parts')) {
       out.innerHTML = `<div class="summary grey">A JWT has three dot-separated parts. ${window.escapeHtml(res.error)}.</div>`;
     } else if (res.error === 'bad header') {
-      out.innerHTML = `<div class="summary red">Header is not valid base64url JSON.</div>`;
+      out.innerHTML = '<div class="summary red">Header is not valid base64url JSON.</div>';
     } else if (res.error === 'bad payload') {
-      out.innerHTML = `<div class="summary red">Payload is not valid base64url JSON.</div>`;
+      out.innerHTML = '<div class="summary red">Payload is not valid base64url JSON.</div>';
     } else {
       out.innerHTML = '';
     }

@@ -94,7 +94,7 @@ async function runGeo(query, panel) {
       ['Timezone', d.timezone && d.timezone.id],
     ].filter(([, v]) => v).map(([k, v]) => `<tr><td>${k}</td><td>${window.escapeHtml(v)}</td></tr>`).join('');
     panel.innerHTML =
-      `<div class="note">Geolocation is approximate. Data from ipwho.is.</div>` +
+      '<div class="note">Geolocation is approximate. Data from ipwho.is.</div>' +
       window.card(`Geolocation — ${ip}`, `<table><tbody>${rows}</tbody></table>`);
   } catch (e) {
     window.showError(panel, e.message || 'Geo lookup failed.');
@@ -159,8 +159,8 @@ function runCidr(query, panel) {
     const r = window.cidrContains(panel.querySelector('#cc-cidr').value.trim(), panel.querySelector('#cc-ip').value.trim());
     if (r === null) { window.showError(ccOut, 'Enter a valid CIDR and IPv4 address.'); return; }
     ccOut.innerHTML = r
-      ? `<div class="summary green">✓ Yes — the IP is inside that range.</div>`
-      : `<div class="summary red">✗ No — the IP is outside that range.</div>`;
+      ? '<div class="summary green">✓ Yes — the IP is inside that range.</div>'
+      : '<div class="summary red">✗ No — the IP is outside that range.</div>';
   };
   const csOut = panel.querySelector('#cs-out');
   const split = () => {

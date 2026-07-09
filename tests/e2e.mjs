@@ -201,7 +201,7 @@ async function main() {
   {
     const res = await fetch(BASE + '/');
     const csp = res.headers.get('content-security-policy') || '';
-    ok('CSP present with script-src self', csp.includes("script-src 'self'"), csp.slice(0, 60));
+    ok('CSP present with script-src self', csp.includes('script-src \'self\''), csp.slice(0, 60));
     ok('X-Content-Type-Options nosniff', res.headers.get('x-content-type-options') === 'nosniff');
   }
 

@@ -79,7 +79,7 @@ async function runDMARC(query, panel) {
     let summary = `Policy: <span class="badge ${badge}">${p.toUpperCase()}</span>`;
     if (tags.pct && tags.pct !== '100') summary += ` &nbsp;·&nbsp; applied to ${window.escapeHtml(tags.pct)}% of mail`;
     if (tags.rua) summary += `<br><span class="muted">Aggregate reports → ${window.escapeHtml(tags.rua)}</span>`;
-    const warn = p === 'none' ? `<div class="summary yellow">Monitoring mode only — mail will not be rejected or quarantined.</div>` : '';
+    const warn = p === 'none' ? '<div class="summary yellow">Monitoring mode only — mail will not be rejected or quarantined.</div>' : '';
     window.showResult(panel,
       warn +
       `<div class="summary ${badge}">${summary}</div>` +
@@ -134,7 +134,7 @@ async function doDKIM(domain, panel) {
     ].map(([k, v, d]) => `<tr><td>${window.escapeHtml(k)}</td><td>${window.escapeHtml(String(v))}</td><td>${window.escapeHtml(d)}</td></tr>`).join('');
     // t is a colon-separated flag list; testing mode is present if 'y' is any flag.
     const warn = (tags.t || '').split(':').map((f) => f.trim().toLowerCase()).includes('y')
-      ? `<div class="summary yellow">Testing mode (t=y) — DKIM failures won't affect delivery.</div>` : '';
+      ? '<div class="summary yellow">Testing mode (t=y) — DKIM failures won\'t affect delivery.</div>' : '';
     out.innerHTML =
       warn +
       window.card(`Raw DKIM record — ${selector}`, `<pre class="raw">${window.escapeHtml(dkim)}</pre>`, dkim) +
@@ -339,7 +339,7 @@ function runBuilder(query, panel) {
       rua: panel.querySelector('#dm-rua').value.trim(), adkim: align, aspf: align,
     });
     const out = panel.querySelector('#dm-out');
-    out.innerHTML = `<div class="muted" style="margin-bottom:0.3rem">Host: <code>_dmarc.yourdomain.com</code></div>` + record(r) + `<button class="copy-btn" data-copy="${window.escapeHtml(r)}" style="position:static">copy</button>`;
+    out.innerHTML = '<div class="muted" style="margin-bottom:0.3rem">Host: <code>_dmarc.yourdomain.com</code></div>' + record(r) + `<button class="copy-btn" data-copy="${window.escapeHtml(r)}" style="position:static">copy</button>`;
     window.wireCopyButtons(out);
   };
   panel.querySelectorAll('#spf-ip4,#spf-inc,#spf-a,#spf-mx,#spf-all').forEach((el) => el.addEventListener('input', buildS));

@@ -36,11 +36,11 @@ async function runCloudIP(query, panel) {
       const prefixes = [...new Set(awsMatches.map((p) => p.ip_prefix))];
       window.showResult(panel,
         `<div class="summary yellow">Provider: <span class="badge yellow">Amazon Web Services</span> &nbsp;·&nbsp; region <strong>${window.escapeHtml(region)}</strong></div>` +
-        window.card(`AWS — ${ip}`, `<table><tbody>` +
+        window.card(`AWS — ${ip}`, '<table><tbody>' +
           `<tr><td>Region</td><td>${window.escapeHtml(region)}</td></tr>` +
           `<tr><td>Services</td><td>${window.escapeHtml(services.join(', '))}</td></tr>` +
           `<tr><td>Matched prefix</td><td class="data-cell"><span class="data-val">${window.escapeHtml(prefixes.join(', '))}</span></td></tr>` +
-          `</tbody></table>`));
+          '</tbody></table>'));
       return;
     }
 
@@ -51,12 +51,12 @@ async function runCloudIP(query, panel) {
     const badge = provider ? 'yellow' : 'grey';
     window.showResult(panel,
       `<div class="summary ${badge}">Provider: <span class="badge ${badge}">${window.escapeHtml(provider || 'Not a recognized cloud')}</span></div>` +
-      window.card(`IP — ${ip}`, `<table><tbody>` +
+      window.card(`IP — ${ip}`, '<table><tbody>' +
         `<tr><td>Organization</td><td>${window.escapeHtml(conn.org || '—')}</td></tr>` +
         `<tr><td>ISP</td><td>${window.escapeHtml(conn.isp || '—')}</td></tr>` +
         `<tr><td>ASN</td><td>${conn.asn ? 'AS' + window.escapeHtml(String(conn.asn)) : '—'}</td></tr>` +
         `<tr><td>Location</td><td>${window.escapeHtml([geo && geo.city, geo && geo.country].filter(Boolean).join(', ') || '—')}</td></tr>` +
-        `</tbody></table>`));
+        '</tbody></table>'));
   } catch (e) {
     window.showError(panel, e.message || 'Cloud IP lookup failed.');
   }
@@ -89,12 +89,12 @@ async function runFingerprint(query, panel) {
 
     const row = (label, val, detail) => `<tr><td>${label}</td><td>${val ? `<span class="badge blue">${window.escapeHtml(val)}</span>` : '<span class="muted">unknown</span>'}${detail ? `<br><span class="muted">${window.escapeHtml(detail)}</span>` : ''}</td></tr>`;
     window.showResult(panel,
-      window.card(`What ${domain} runs on`, `<table><tbody>` +
+      window.card(`What ${domain} runs on`, '<table><tbody>' +
         row('Hosting / CDN', hosting, cnameTargets.join(', ')) +
         row('Email', email, mxHosts.join(', ')) +
         row('DNS', dns, nsHosts.join(', ')) +
-        `</tbody></table>`) +
-      `<div class="note">Inferred from CNAME, MX, and NS records. "Unknown" just means no known pattern matched.</div>`);
+        '</tbody></table>') +
+      '<div class="note">Inferred from CNAME, MX, and NS records. "Unknown" just means no known pattern matched.</div>');
   } catch (e) {
     window.showError(panel, e.message || 'Fingerprint failed.');
   }

@@ -36,7 +36,7 @@ function certCard(c, domain, primary) {
   const remaining = daysBetween(now, notAfter);
   let badge;
   if (remaining < 0) badge = '<span class="badge red">EXPIRED</span>';
-  else if (remaining <= 30) badge = `<span class="badge yellow">EXPIRING SOON</span>`;
+  else if (remaining <= 30) badge = '<span class="badge yellow">EXPIRING SOON</span>';
   else badge = '<span class="badge green">VALID</span>';
 
   const sans = (c.name_value || '').split(/\n/).map((s) => s.trim()).filter(Boolean);
@@ -56,7 +56,7 @@ function certCard(c, domain, primary) {
     ['Serial', window.escapeHtml(c.serial_number || '—')],
     ['crt.sh ID', c.id ? `<a href="https://crt.sh/?id=${encodeURIComponent(c.id)}" target="_blank" rel="noopener">${window.escapeHtml(String(c.id))}</a>` : '—'],
   ].map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
-  return window.card(primary ? `Certificate — ${domain}` : `Historical certificate`, `<table><tbody>${rows}</tbody></table>`);
+  return window.card(primary ? `Certificate — ${domain}` : 'Historical certificate', `<table><tbody>${rows}</tbody></table>`);
 }
 
 function historyBlock(certs, domain) {
@@ -67,7 +67,7 @@ function historyBlock(certs, domain) {
   }).join('');
   return `<details><summary>Show ${certs.length} more recent certificate${certs.length === 1 ? '' : 's'}</summary>` +
     window.card('', `<table><thead><tr><th>Common Name</th><th>Issuer</th><th>Expires</th><th>ID</th></tr></thead><tbody>${inner}</tbody></table>`) +
-    `</details>`;
+    '</details>';
 }
 
 // ---------- Decode a pasted PEM certificate or CSR (100% client-side) ----------
@@ -110,7 +110,7 @@ function renderCert(c, out) {
 function renderCsr(c, out) {
   if (!c) { window.showError(out, 'Could not parse that as a PKCS#10 CSR. Check it is a valid PEM.'); return; }
   out.innerHTML =
-    `<div class="summary blue">Certificate Signing Request</div>` +
+    '<div class="summary blue">Certificate Signing Request</div>' +
     window.card('CSR', kv([
       ['Subject', window.escapeHtml(c.subject), c.subject],
       ['Requested SANs', sansHtml(c.sans), (c.sans || []).join('\n')],

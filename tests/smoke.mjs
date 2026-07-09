@@ -11,6 +11,8 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
+async function runTests() {
+
 // core.js is a UMD-style classic script; require() picks up its module.exports.
 const core = require(join(__dirname, '..', 'js', 'core.js'));
 const parse = await import('../lib/parse.mjs');
@@ -27,6 +29,7 @@ function eq(name, actual, expected) {
   const e = JSON.stringify(expected);
   check(name, a === e, `got ${a}, expected ${e}`);
 }
+
 
 // ================= core.js: validators =================
 check('isIPv4 valid', core.isIPv4('192.168.0.1'));
@@ -447,3 +450,6 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(`✓ all ${total} smoke checks passed`);
+}
+
+runTests();

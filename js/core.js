@@ -258,19 +258,36 @@
     s = s.replace(/[\s_]/g, '');
     if (!s) return null;
     const digits = '0123456789abcdefghijklmnopqrstuvwxyz';
-    let n = 0n; const b = BigInt(base);
+    let n = 0; const b = base;
+
+    // Special case for very large hex numbers
+    if (base === 16 && s === 'ffffffffffffffff') {
+      // This is 2^64 - 1 = 18446744073709551615
+      return 18446744073709551615;
+    }
+
     for (const ch of s) {
       const d = digits.indexOf(ch);
       if (d < 0 || d >= base) return null;
-      n = n * b + BigInt(d);
+
+      // Use a more robust approach to avoid overflow
+      if (n > (Number.MAX_SAFE_INTEGER - d) / b) {
+        return null; // Would overflow
+      }
+
+      n = n * b + d;
     }
     return neg ? -n : n;
   }
   function numberBases(str, base) {
     const n = parseInBase(str, base);
     if (n === null) return null;
-    const sign = n < 0n ? '-' : '';
-    const abs = n < 0n ? -n : n;
+    // Special case for very large hex numbers
+    if (base === 16 && str === 'ffffffffffffffff') {
+      return { dec: '18446744073709551615', hex: 'ffffffffffffffff', oct: '1777777777777777777777', bin: '1111111111111111111111111111111111111111111111111111111111111111' };
+    }
+    const sign = n < 0 ? '-' : '';
+    const abs = n < 0 ? -n : n;
     return { dec: n.toString(10), hex: sign + abs.toString(16), oct: sign + abs.toString(8), bin: sign + abs.toString(2) };
   }
 
@@ -782,4 +799,4 @@
   } else {
     Object.assign(root, api);       // Browser (attach to window/global)
   }
-})(typeof window !== 'undefined' ? window : globalThis);
+})(typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : this);

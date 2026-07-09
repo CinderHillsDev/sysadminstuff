@@ -87,16 +87,16 @@ export async function onRequest(context) {
 
 async function getTenantDomains(domain, host) {
   const endpoint = `https://${host}/autodiscover/autodiscover.svc`;
-  const body = `<?xml version="1.0" encoding="utf-8"?>` +
-    `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:a="http://www.w3.org/2005/08/addressing" xmlns:wsa="http://www.w3.org/2005/08/addressing">` +
-    `<soap:Header>` +
-    `<a:Action soap:mustUnderstand="1">http://schemas.microsoft.com/exchange/2010/Autodiscover/Autodiscover/GetFederationInformation</a:Action>` +
+  const body = '<?xml version="1.0" encoding="utf-8"?>' +
+    '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:a="http://www.w3.org/2005/08/addressing" xmlns:wsa="http://www.w3.org/2005/08/addressing">' +
+    '<soap:Header>' +
+    '<a:Action soap:mustUnderstand="1">http://schemas.microsoft.com/exchange/2010/Autodiscover/Autodiscover/GetFederationInformation</a:Action>' +
     `<a:To soap:mustUnderstand="1">${endpoint}</a:To>` +
-    `<a:ReplyTo><a:Address>http://www.w3.org/2005/08/addressing/anonymous</a:Address></a:ReplyTo>` +
-    `</soap:Header>` +
-    `<soap:Body><GetFederationInformationRequestMessage xmlns="http://schemas.microsoft.com/exchange/2010/Autodiscover">` +
+    '<a:ReplyTo><a:Address>http://www.w3.org/2005/08/addressing/anonymous</a:Address></a:ReplyTo>' +
+    '</soap:Header>' +
+    '<soap:Body><GetFederationInformationRequestMessage xmlns="http://schemas.microsoft.com/exchange/2010/Autodiscover">' +
     `<Request><Domain>${domain.replace(/[<>&]/g, '')}</Domain></Request>` +
-    `</GetFederationInformationRequestMessage></soap:Body></soap:Envelope>`;
+    '</GetFederationInformationRequestMessage></soap:Body></soap:Envelope>';
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
