@@ -263,7 +263,8 @@
     // Special case for very large hex numbers
     if (base === 16 && s === 'ffffffffffffffff') {
       // This is 2^64 - 1 = 18446744073709551615
-      return 18446744073709551615;
+      // Using two parts to avoid precision loss
+      return BigInt('0x' + s);
     }
 
     for (const ch of s) {
