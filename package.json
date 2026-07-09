@@ -1,0 +1,16 @@
+{
+  "name": "sysadminstuff",
+  "version": "1.0.0",
+  "description": "Sysadmin utilities for network, DNS, and security operations",
+  "main": "js/core.js",
+  "scripts": {
+    "test": "node tests/smoke.mjs",
+    "lint": "eslint . --ext .js,.mjs"
+  },
+  "author": "CinderHillsDev",
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^8.57.1",
+    "eslint-plugin-node": "^11.1.0"
+  }
+}
