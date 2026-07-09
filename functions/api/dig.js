@@ -108,6 +108,6 @@ export async function onRequest(context) {
   } catch (e) {
     // No user data in log.
     console.error('dig query failed.');
-    return json({ error: 'Could not get an answer from that nameserver (unreachable, refused, or timed out).' }, 424);
+    return json({ error: 'Could not get an answer from that nameserver (unreachable, refused, or timed out). It must speak standard DNS on port 53 — a DoH-only endpoint won’t answer here.' }, 424);
   }
 }

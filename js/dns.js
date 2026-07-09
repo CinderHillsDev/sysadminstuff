@@ -51,9 +51,12 @@ async function lookupDNS(name, type) {
   }
   let ns;
   if (server.key === 'custom') {
-    ns = dnsCustomNS.trim().replace(/\.$/, '');
+    // Accept a pasted DoH URL too (https://dns.google/dns-query → dns.google);
+    // whatever we end up with is queried over classic DNS on TCP/53, which
+    // every major public resolver serves alongside DoH.
+    ns = window.hostFromInput(dnsCustomNS).replace(/\.$/, '');
     if (!ns) throw new Error('Enter a nameserver hostname or IP address.');
-    if (!window.isDomain(ns) && !window.isIP(ns)) throw new Error('The custom nameserver must be a hostname or IP address.');
+    if (!window.isDomain(ns) && !window.isIP(ns)) throw new Error('The custom nameserver must be a hostname or IP address (it will be queried over standard DNS on port 53).');
   } else {
     ns = await findAuthNS(name);
   }
@@ -111,6 +114,7 @@ function renderLookupControls(panel, isPtr) {
     `<div class="pills"><label class="field-label" style="margin:0">Server ` +
     `<select id="dns-ns-select" class="text-input">${options}</select></label>` +
     `<input type="text" id="dns-ns-custom" class="text-input" placeholder="ns1.example.com or 9.9.9.9" ` +
+    `title="Queried over standard DNS (TCP port 53). Pasting a DoH URL is fine — its hostname is used." ` +
     `value="${window.escapeHtml(dnsCustomNS)}" style="width:16rem;display:${dnsServerKey === 'custom' ? '' : 'none'}"></div>` +
     `<div class="result" id="dns-lookup-result"></div>`;
   const rerun = () => {
