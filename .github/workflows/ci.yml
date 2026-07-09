@@ -49,7 +49,7 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Run linting
-        run: npx eslint . --ext .js,.mjs
+        run: npx eslint . --ext .js,.mjs --ignore-pattern node_modules/ --max-warnings=100
 
   security:
     name: Security scan
