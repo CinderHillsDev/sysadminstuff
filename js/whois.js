@@ -15,6 +15,14 @@ async function runWhois(query, panel) {
     const d = await res.json();
     if (d.error) throw new Error(d.error);
 
+    // TLDs without RDAP fall back to the registry's classic whois — raw text.
+    if (d.raw) {
+      panel.innerHTML =
+        window.card(`Whois — ${q}`, `<pre class="raw">${window.escapeHtml(d.raw)}</pre>`, d.raw) +
+        `<div class="note">This registry doesn&#39;t publish structured RDAP data, so this is the raw whois record from ${window.escapeHtml(d.source || 'the registry')}.</div>`;
+      return;
+    }
+
     const isIP = window.isIP(q);
     let rows;
     if (isIP) {
@@ -45,7 +53,11 @@ async function runWhois(query, panel) {
       window.card(`Whois — ${q}`, `<table><tbody>${body}</tbody></table>`) +
       `<div class="note">Data from RDAP. If a field is missing, some registries withhold it — try <a href="https://lookup.icann.org/en/lookup?name=${encodeURIComponent(q)}" target="_blank" rel="noopener">lookup.icann.org</a>.</div>`;
   } catch (e) {
-    window.showError(panel, e.message || 'Whois lookup failed.');
+    // Error plus a fallback link — many ccTLD registries (.de, .ch, .io, …)
+    // don't publish RDAP, so point at ICANN's lookup instead of a dead end.
+    panel.innerHTML =
+      `<div class="summary red">${window.escapeHtml(e.message || 'Whois lookup failed.')}</div>` +
+      `<div class="note">Try <a href="https://lookup.icann.org/en/lookup?name=${encodeURIComponent(q)}" target="_blank" rel="noopener">lookup.icann.org</a> or the registry&#39;s own whois service.</div>`;
   }
 }
 

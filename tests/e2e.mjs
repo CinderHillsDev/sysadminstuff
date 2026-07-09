@@ -68,6 +68,18 @@ async function main() {
     okUpstream('whois domain 200', status, status === 200, `status ${status}`);
     okUpstream('whois domain has field', status, json && (json.registrar !== undefined || json.domain), JSON.stringify(json));
   }
+  // whois — RDAP override for a registry missing from the IANA bootstrap (.de)
+  {
+    const { status, json } = await getJson('/api/whois?q=heise.de');
+    okUpstream('whois .de override 200', status, status === 200, `status ${status}`);
+    okUpstream('whois .de has domain field', status, json && json.domain, JSON.stringify(json));
+  }
+  // whois — classic port-43 fallback for a TLD with no RDAP at all (.eu)
+  {
+    const { status, json } = await getJson('/api/whois?q=europa.eu');
+    okUpstream('whois .eu raw fallback 200', status, status === 200, `status ${status}`);
+    okUpstream('whois .eu returns raw text', status, json && json.raw && json.source, JSON.stringify(json).slice(0, 120));
+  }
   // whois missing param — this is OUR validation, always checked
   {
     const { status, json } = await getJson('/api/whois');

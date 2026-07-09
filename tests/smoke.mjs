@@ -179,6 +179,30 @@ eq('rdap ip org', rdapIP.org, 'Cloudflare, Inc.');
 eq('rdap ip nested abuse', rdapIP.abuse, 'abuse@cloudflare.com');
 eq('rdap ip cidr range', rdapIP.cidr, '104.16.0.0 – 104.31.255.255');
 
+// ================= lib/parse.mjs: RDAP target + failure shaping =================
+eq('rdap target com via rdap.org', parse.rdapTarget('example.com', false), 'https://rdap.org/domain/example.com');
+eq('rdap target ip', parse.rdapTarget('1.1.1.1', true), 'https://rdap.org/ip/1.1.1.1');
+eq('rdap target de override', parse.rdapTarget('heise.de', false), 'https://rdap.denic.de/domain/heise.de');
+eq('rdap target io override', parse.rdapTarget('github.io', false), 'https://rdap.identitydigital.services/rdap/domain/github.io');
+eq('rdap target trailing dot + case', parse.rdapTarget('Heise.DE.', false), 'https://rdap.denic.de/domain/Heise.DE.');
+
+const noRdapTld = parse.rdapFailure(404, 'https://rdap.org/domain/example.eu', 'example.eu', false);
+eq('rdap failure bootstrap miss is 404', noRdapTld.status, 404);
+check('rdap failure bootstrap miss names tld', noRdapTld.error.includes('.eu'), noRdapTld.error);
+const notFound = parse.rdapFailure(404, 'https://rdap.verisign.com/com/v1/domain/nope.com', 'nope.com', false);
+eq('rdap failure registry 404 is not-found', notFound.error, 'Domain not found — it may be unregistered.');
+eq('rdap failure ip 404', parse.rdapFailure(404, 'https://rdap.arin.net/ip/x', '203.0.113.9', true).error, 'No registration found for this IP address.');
+eq('rdap failure 429 passthrough', parse.rdapFailure(429, 'https://rdap.org/domain/x.com', 'x.com', false).status, 429);
+// 5xx must be remapped — Cloudflare replaces 502/504 bodies with its own page.
+eq('rdap failure 502 remapped to 424', parse.rdapFailure(502, 'https://rdap.org/domain/x.com', 'x.com', false).status, 424);
+
+// ================= lib/parse.mjs: whois referral =================
+eq('whois referral parsed', parse.parseWhoisReferral('% IANA WHOIS server\nrefer:        whois.eu\nwhois:        whois.eu\nstatus: ACTIVE'), 'whois.eu');
+eq('whois referral case-insensitive', parse.parseWhoisReferral('WHOIS:  WHOIS.NIC.AT\n'), 'whois.nic.at');
+eq('whois referral absent', parse.parseWhoisReferral('% IANA WHOIS server\nstatus: ACTIVE'), '');
+eq('whois referral garbage rejected', parse.parseWhoisReferral('whois: not a host!\n'), '');
+eq('whois referral empty input', parse.parseWhoisReferral(''), '');
+
 // ================= lib/parse.mjs: bgpview shaping =================
 const asnFromIp = parse.shapeAsnFromIp({
   data: { ip: '1.1.1.1', prefixes: [{ prefix: '1.1.1.0/24', name: 'APNIC-LABS', asn: { asn: 13335, name: 'CLOUDFLARENET', description: 'Cloudflare', country_code: 'US' } }] },
