@@ -80,6 +80,27 @@ async function main() {
     okUpstream('whois .eu raw fallback 200', status, status === 200, `status ${status}`);
     okUpstream('whois .eu returns raw text', status, json && json.raw && json.source, JSON.stringify(json).slice(0, 120));
   }
+  // dig — DNS over TCP/53 against a chosen nameserver (live network)
+  {
+    const { status, json } = await getJson('/api/dig?name=example.com&type=A&ns=8.8.8.8');
+    okUpstream('dig A via 8.8.8.8 200', status, status === 200, `status ${status}`);
+    okUpstream('dig returns Answer array', status, json && Array.isArray(json.Answer), JSON.stringify(json).slice(0, 120));
+    okUpstream('dig echoes server', status, json && json.Server === '8.8.8.8', JSON.stringify(json).slice(0, 120));
+  }
+  // dig validation — OUR checks, always run
+  {
+    const { status } = await getJson('/api/dig?name=example.com&type=A');
+    ok('dig missing ns 400', status === 400);
+  }
+  {
+    const { status } = await getJson('/api/dig?name=example.com&type=BOGUS&ns=8.8.8.8');
+    ok('dig bad type 400', status === 400);
+  }
+  {
+    const { status } = await getJson('/api/dig?name=example.com&type=A&ns=10.0.0.1');
+    ok('dig blocks private nameserver 400', status === 400);
+  }
+
   // whois missing param — this is OUR validation, always checked
   {
     const { status, json } = await getJson('/api/whois');

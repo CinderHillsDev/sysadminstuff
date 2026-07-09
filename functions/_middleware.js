@@ -26,6 +26,7 @@ const CACHE_TTL = {
   '/api/whois': 3600,
   '/api/tenant': 3600,
   '/api/rbl': 600,
+  '/api/dig': 60,
   '/api/tls': 600,
   '/api/headers': 300,
 };

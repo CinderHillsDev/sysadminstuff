@@ -14,6 +14,7 @@ const require = createRequire(import.meta.url);
 // core.js is a UMD-style classic script; require() picks up its module.exports.
 const core = require(join(__dirname, '..', 'js', 'core.js'));
 const parse = await import('../lib/parse.mjs');
+const dnswire = await import('../lib/dnswire.mjs');
 
 // ---- tiny test harness ----
 let passed = 0;
@@ -202,6 +203,48 @@ eq('whois referral case-insensitive', parse.parseWhoisReferral('WHOIS:  WHOIS.NI
 eq('whois referral absent', parse.parseWhoisReferral('% IANA WHOIS server\nstatus: ACTIVE'), '');
 eq('whois referral garbage rejected', parse.parseWhoisReferral('whois: not a host!\n'), '');
 eq('whois referral empty input', parse.parseWhoisReferral(''), '');
+
+// ================= lib/dnswire.mjs: DNS wire codec =================
+{
+  const q = dnswire.encodeQuery('example.com', 1, 0x1234);
+  eq('dnswire query length', q.length, 29);
+  eq('dnswire query header', [...q.slice(0, 12)], [0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
+  eq('dnswire query qname', [...q.slice(12, 25)],
+    [7, ...[...'example'].map((c) => c.charCodeAt(0)), 3, ...[...'com'].map((c) => c.charCodeAt(0)), 0]);
+  eq('dnswire query qtype/qclass', [...q.slice(25)], [0, 1, 0, 1]);
+
+  // Hand-built response: example.com with A, MX, TXT, AAAA answers, all using
+  // a compression pointer (0xc00c) back to the question name.
+  const s = (str) => [...str].map((c) => c.charCodeAt(0));
+  const resp = new Uint8Array([
+    0x12, 0x34, 0x81, 0x80, 0, 1, 0, 4, 0, 0, 0, 0,                    // header: QR|RD|RA, NOERROR
+    7, ...s('example'), 3, ...s('com'), 0, 0, 1, 0, 1,                 // question: example.com A IN
+    0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 1, 0x2c, 0, 4, 93, 184, 216, 34,    // A 300 93.184.216.34
+    0xc0, 0x0c, 0, 15, 0, 1, 0, 0, 1, 0x2c, 0, 9, 0, 10, 4, ...s('mail'), 0xc0, 0x0c, // MX 10 mail.example.com.
+    0xc0, 0x0c, 0, 16, 0, 1, 0, 0, 0, 0x3c, 0, 12, 11, ...s('hello world'),           // TXT "hello world"
+    0xc0, 0x0c, 0, 28, 0, 1, 0, 0, 0, 0x3c, 0, 16, 0x26, 0x06, 0x47, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11, // AAAA
+  ]);
+  const parsed = dnswire.parseResponse(resp);
+  eq('dnswire rcode', parsed.rcodeName, 'NOERROR');
+  eq('dnswire answer count', parsed.answers.length, 4);
+  eq('dnswire A answer', parsed.answers[0], { name: 'example.com', type: 1, TTL: 300, data: '93.184.216.34' });
+  eq('dnswire MX data', parsed.answers[1].data, '10 mail.example.com.');
+  eq('dnswire TXT data', parsed.answers[2].data, '"hello world"');
+  eq('dnswire AAAA data', parsed.answers[3].data, '2606:4700::1111');
+
+  const nx = dnswire.parseResponse(new Uint8Array([0, 1, 0x81, 0x83, 0, 0, 0, 0, 0, 0, 0, 0]));
+  eq('dnswire NXDOMAIN', nx.rcodeName, 'NXDOMAIN');
+
+  let threw = false;
+  try { dnswire.parseResponse(new Uint8Array([0, 1, 0x81])); } catch (e) { threw = true; }
+  check('dnswire truncated throws', threw);
+  threw = false;
+  // Compression pointer that points at itself must not loop forever.
+  try {
+    dnswire.parseResponse(new Uint8Array([0, 1, 0x81, 0x80, 0, 1, 0, 0, 0, 0, 0, 0, 0xc0, 0x0c, 0, 1, 0, 1]));
+  } catch (e) { threw = true; }
+  check('dnswire pointer loop throws', threw);
+}
 
 // ================= lib/parse.mjs: bgpview shaping =================
 const asnFromIp = parse.shapeAsnFromIp({

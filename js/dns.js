@@ -5,6 +5,64 @@ const TYPE_NUM = { 1: 'A', 2: 'NS', 5: 'CNAME', 6: 'SOA', 12: 'PTR', 15: 'MX', 1
 
 let dnsSelectedType = 'A';
 
+// ---------- Lookup nameserver picker ----------
+// Presets query DoH straight from the browser (only these public resolvers
+// send CORS headers). "Authoritative" and "Custom" need real DNS on TCP/53,
+// which a browser can't speak — those go through our /api/dig function.
+const LOOKUP_SERVERS = [
+  { key: 'cloudflare', label: 'Cloudflare (1.1.1.1)', doh: 'https://cloudflare-dns.com/dns-query' },
+  { key: 'google', label: 'Google (8.8.8.8)', doh: 'https://dns.google/resolve' },
+  { key: 'dnssb', label: 'DNS.SB (185.222.222.222)', doh: 'https://doh.sb/dns-query' },
+  { key: 'auth', label: 'Authoritative (zone NS)' },
+  { key: 'custom', label: 'Custom nameserver…' },
+];
+let dnsServerKey = 'cloudflare';
+let dnsCustomNS = '';
+const authNSCache = new Map();
+
+// Find the zone's nameserver by walking up from the query name.
+async function findAuthNS(name) {
+  const cached = authNSCache.get(name);
+  if (cached) return cached;
+  let zone = name.replace(/\.$/, '');
+  for (let i = 0; i < 5; i++) {
+    const d = await window.dohQuery(zone, 'NS');
+    const servers = (d.Answer || []).filter((a) => a.type === 2).map((a) => String(a.data).replace(/\.$/, ''));
+    if (servers.length) { authNSCache.set(name, servers.sort()[0]); return authNSCache.get(name); }
+    // Not a zone apex — the SOA in the authority section names the zone; else strip a label.
+    const soa = (d.Authority || []).find((a) => a.type === 6);
+    const parent = soa && soa.name !== zone ? soa.name : zone.split('.').slice(1).join('.');
+    if (!parent || parent === zone || !parent.includes('.')) break;
+    zone = parent;
+  }
+  throw new Error(`Could not determine the authoritative nameserver for ${name}.`);
+}
+
+// Query `name`/`type` against whatever server is selected. Returns DoH-shaped
+// JSON ({ Answer: [...] }, plus Server when it went through /api/dig).
+async function lookupDNS(name, type) {
+  const server = LOOKUP_SERVERS.find((s) => s.key === dnsServerKey) || LOOKUP_SERVERS[0];
+  if (server.doh) {
+    const sep = server.doh.includes('?') ? '&' : '?';
+    const res = await fetch(`${server.doh}${sep}name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`,
+      { headers: { Accept: 'application/dns-json' } });
+    if (!res.ok) throw new Error(`DNS query failed (${res.status})`);
+    return res.json();
+  }
+  let ns;
+  if (server.key === 'custom') {
+    ns = dnsCustomNS.trim().replace(/\.$/, '');
+    if (!ns) throw new Error('Enter a nameserver hostname or IP address.');
+    if (!window.isDomain(ns) && !window.isIP(ns)) throw new Error('The custom nameserver must be a hostname or IP address.');
+  } else {
+    ns = await findAuthNS(name);
+  }
+  const res = await fetch(`/api/dig?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&ns=${encodeURIComponent(ns)}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) throw new Error(data.error || `dig query failed (${res.status})`);
+  return data;
+}
+
 function reverseInAddr(ip) {
   ip = (ip || '').trim();
   if (window.isIPv4(ip)) {
@@ -45,14 +103,38 @@ function renderLookupControls(panel, isPtr) {
   const pills = types.map((t) =>
     `<button class="pill${t === dnsSelectedType ? ' active' : ''}" data-type="${t}">${t}</button>`
   ).join('');
-  panel.innerHTML = `<div class="pills">${pills}</div><div class="result" id="dns-lookup-result"></div>`;
+  const options = LOOKUP_SERVERS.map((s) =>
+    `<option value="${s.key}"${s.key === dnsServerKey ? ' selected' : ''}>${s.label}</option>`
+  ).join('');
+  panel.innerHTML =
+    `<div class="pills">${pills}</div>` +
+    `<div class="pills"><label class="field-label" style="margin:0">Server ` +
+    `<select id="dns-ns-select" class="text-input">${options}</select></label>` +
+    `<input type="text" id="dns-ns-custom" class="text-input" placeholder="ns1.example.com or 9.9.9.9" ` +
+    `value="${window.escapeHtml(dnsCustomNS)}" style="width:16rem;display:${dnsServerKey === 'custom' ? '' : 'none'}"></div>` +
+    `<div class="result" id="dns-lookup-result"></div>`;
+  const rerun = () => {
+    const q = document.getElementById('query').value.trim();
+    if (q) doLookup(q, panel, dnsSelectedType);
+  };
   panel.querySelectorAll('.pill').forEach((p) => {
     p.addEventListener('click', () => {
       dnsSelectedType = p.dataset.type;
       panel.querySelectorAll('.pill').forEach((x) => x.classList.toggle('active', x === p));
-      const q = document.getElementById('query').value.trim();
-      doLookup(q, panel, dnsSelectedType);
+      rerun();
     });
+  });
+  const sel = panel.querySelector('#dns-ns-select');
+  const custom = panel.querySelector('#dns-ns-custom');
+  sel.addEventListener('change', () => {
+    dnsServerKey = sel.value;
+    custom.style.display = dnsServerKey === 'custom' ? '' : 'none';
+    if (dnsServerKey === 'custom' && !dnsCustomNS.trim()) { custom.focus(); return; }
+    rerun();
+  });
+  custom.addEventListener('change', () => { dnsCustomNS = custom.value; rerun(); });
+  custom.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); dnsCustomNS = custom.value; rerun(); }
   });
 }
 
@@ -64,28 +146,36 @@ async function doLookup(query, panel, type) {
     if (type === 'ALL') {
       const wanted = DNS_TYPES.filter((t) => t !== 'PTR');
       const results = await Promise.all(wanted.map((t) =>
-        window.dohQuery(query, t).then((d) => ({ t, d })).catch(() => ({ t, d: null }))
+        lookupDNS(query, t).then((d) => ({ t, d })).catch(() => ({ t, d: null }))
       ));
       let html = '';
       let any = false;
+      let server = '';
       results.forEach(({ t, d }) => {
+        if (d && d.Server) server = d.Server;
         const rows = (d && d.Answer) ? d.Answer.filter((a) => typeName(a.type) === t) : [];
         if (rows.length) { any = true; html += recordCard(t, rows); }
       });
-      out.innerHTML = any ? html : `<div class="summary grey">No records found for ${window.escapeHtml(query)}.</div>`;
+      out.innerHTML = any ? html + serverNote(server) : `<div class="summary grey">No records found for ${window.escapeHtml(query)}.</div>`;
       window.showResult(out, out.innerHTML);
     } else {
-      const data = await window.dohQuery(lookupName, type);
+      const data = await lookupDNS(lookupName, type);
       const rows = (data.Answer || []).filter((a) => typeName(a.type) === type);
       if (!rows.length) {
-        out.innerHTML = `<div class="summary grey">No ${type} records found for ${window.escapeHtml(query)}.</div>`;
+        out.innerHTML = `<div class="summary grey">No ${type} records found for ${window.escapeHtml(query)}.</div>` + serverNote(data.Server);
       } else {
-        window.showResult(out, recordCard(type, rows));
+        window.showResult(out, recordCard(type, rows) + serverNote(data.Server));
       }
     }
   } catch (e) {
-    window.showError(out, `Could not reach the DNS resolver. ${e.message || ''}`.trim());
+    window.showError(out, `${e.message || 'Could not reach the DNS resolver.'}`.trim());
   }
+}
+
+// Shown when the answer came from a specific nameserver via /api/dig.
+function serverNote(server) {
+  if (!server) return '';
+  return `<div class="note">Answered by <strong>${window.escapeHtml(server)}</strong> — queried over DNS/TCP through the sysadminstuff.net edge, since browsers can&#39;t speak port 53.</div>`;
 }
 
 function recordCard(type, rows) {
