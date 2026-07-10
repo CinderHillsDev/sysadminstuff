@@ -54,6 +54,7 @@
     <div id="tab-email" class="tab-panel">
       <nav class="tabs secondary">
         <button class="subtab active" data-subtab="spf" data-tip="Inspect and explain the SPF record">SPF</button>
+        <button class="subtab" data-subtab="spfcheck" data-tip="Count SPF DNS lookups (RFC 10-limit) and flag dead includes">SPF Lookups</button>
         <button class="subtab" data-subtab="dmarc" data-tip="Inspect and explain the DMARC policy">DMARC</button>
         <button class="subtab" data-subtab="dkim" data-tip="Look up a DKIM key by selector">DKIM</button>
         <button class="subtab" data-subtab="mx" data-tip="MX hosts with IPs and PTR match check">MX</button>
@@ -62,6 +63,7 @@
         <button class="subtab" data-subtab="builder" data-tip="Generate SPF and DMARC records">Builder</button>
       </nav>
       <div class="subpanel active" id="panel-email-spf"></div>
+      <div class="subpanel" id="panel-email-spfcheck"></div>
       <div class="subpanel" id="panel-email-dmarc"></div>
       <div class="subpanel" id="panel-email-dkim"></div>
       <div class="subpanel" id="panel-email-mx"></div>

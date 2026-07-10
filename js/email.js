@@ -55,6 +55,143 @@ async function runSPF(query, panel) {
   }
 }
 
+// ---------- SPF lookup checker ----------
+// Recursively walks include:/redirect=/a/mx/ptr/exists across the whole SPF
+// tree and counts DNS lookups against RFC 7208 §4.6.4: at most 10 lookups and
+// at most 2 "void" lookups (ones that return no records). Exceeding either is a
+// PermError — receivers stop evaluating and the record effectively fails.
+const SPF_LOOKUP_LIMIT = 10;
+const SPF_VOID_LIMIT = 2;
+const SPF_MAX_DEPTH = 12; // guardrail; a valid record can't nest this deep
+
+async function fetchSpf(domain) {
+  const records = await txtLookup(domain);
+  return records.find((r) => /^v=spf1/i.test(r.trim())) || null;
+}
+
+// Walk one domain's SPF record, mutating ctx counters. Returns a tree node:
+// { domain, record, error, terms:[{ term, status, child }] }.
+async function walkSpf(domain, ctx, depth) {
+  const node = { domain, record: null, error: null, terms: [] };
+  if (depth > SPF_MAX_DEPTH) { node.error = 'max recursion depth'; return node; }
+  if (ctx.visited.has(domain)) { node.error = 'cycle — already visited'; return node; }
+  ctx.visited.add(domain);
+
+  let record;
+  try {
+    record = await fetchSpf(domain);
+  } catch (e) {
+    node.error = 'DNS lookup failed';
+    return node;
+  }
+  if (!record) { node.error = 'no SPF record'; return node; }
+  node.record = record;
+
+  const lookups = window.spfLookupTerms(record) || [];
+  node.terms = await Promise.all(lookups.map(async (t) => {
+    ctx.lookups++;
+    const entry = { term: t, status: 'ok', child: null };
+    if (t.type === 'include' || t.type === 'redirect') {
+      const child = await walkSpf(t.value, ctx, depth + 1);
+      entry.child = child;
+      if (child.error === 'no SPF record') { entry.status = 'dead'; ctx.voids++; }
+      else if (child.error && child.error.startsWith('cycle')) { entry.status = 'cycle'; }
+      else if (child.error) { entry.status = 'error'; }
+    } else if (t.type === 'a' || t.type === 'mx') {
+      // A void a/mx (target has no such record) counts toward the void limit.
+      const target = t.value || domain;
+      try {
+        const d = await window.dohQuery(target, t.type === 'a' ? 'A' : 'MX');
+        if (!(d.Answer || []).length) { entry.status = 'void'; ctx.voids++; }
+      } catch (e) { entry.status = 'error'; }
+    } else if (t.type === 'ptr') {
+      entry.status = 'ptr'; // resolves, but RFC 7208 says do not use ptr
+    }
+    // exists: intentionally not resolved — an NXDOMAIN there is normal (it's a
+    // macro-driven existence test), so we only count it, never flag it.
+    return entry;
+  }));
+  return node;
+}
+
+const SPF_STATUS_BADGE = {
+  ok: '<span class="ok">ok</span>',
+  dead: '<span class="err">dead — no SPF record</span>',
+  void: '<span class="warn">void — no records</span>',
+  error: '<span class="err">lookup error</span>',
+  cycle: '<span class="warn">cycle</span>',
+  ptr: '<span class="warn">ptr — deprecated</span>',
+};
+
+// Flatten the walk tree into indented table rows (depth via tree-guides).
+function spfRows(node, depth, rows) {
+  node.terms.forEach((entry) => {
+    const t = entry.term;
+    const indent = depth ? `<span class="muted">${'&nbsp;&nbsp;'.repeat(depth)}└ </span>` : '';
+    const target = t.value || (t.type === 'redirect' ? '' : '(self)');
+    rows.push(
+      `<tr><td>${indent}${window.escapeHtml(t.type)}${target ? ':' + window.escapeHtml(target) : ''}</td>` +
+      `<td>${SPF_STATUS_BADGE[entry.status] || window.escapeHtml(entry.status)}</td></tr>`
+    );
+    if (entry.child && entry.child.record) spfRows(entry.child, depth + 1, rows);
+  });
+}
+
+async function runSpfCheck(query, panel) {
+  const domain = window.hostFromInput(query);
+  window.showLoading(panel, 'Walking the SPF record…');
+  try {
+    const ctx = { lookups: 0, voids: 0, visited: new Set() };
+    const root = await walkSpf(domain, ctx, 0);
+    if (root.error === 'no SPF record') {
+      panel.innerHTML = `<div class="summary grey">No SPF record found for ${window.escapeHtml(domain)}.</div>`;
+      return;
+    }
+    if (root.error) { window.showError(panel, `Could not evaluate SPF for ${domain}: ${root.error}.`); return; }
+
+    const overLimit = ctx.lookups > SPF_LOOKUP_LIMIT;
+    const overVoid = ctx.voids > SPF_VOID_LIMIT;
+    const deadCount = countStatuses(root, ['dead', 'error']);
+
+    let summaryClass = 'green';
+    let summaryText = `✓ ${ctx.lookups} of ${SPF_LOOKUP_LIMIT} DNS lookups used — within the limit.`;
+    if (overLimit) {
+      summaryClass = 'red';
+      summaryText = `✗ ${ctx.lookups} DNS lookups — exceeds the limit of ${SPF_LOOKUP_LIMIT}. Receivers return PermError and SPF fails.`;
+    } else if (overVoid) {
+      summaryClass = 'red';
+      summaryText = `✗ ${ctx.voids} void lookups — exceeds the limit of ${SPF_VOID_LIMIT} (PermError). ${ctx.lookups}/${SPF_LOOKUP_LIMIT} lookups used.`;
+    } else if (deadCount) {
+      summaryClass = 'yellow';
+      summaryText = `⚠ ${ctx.lookups}/${SPF_LOOKUP_LIMIT} lookups used, but ${deadCount} broken — see below.`;
+    }
+
+    const rows = [];
+    spfRows(root, 0, rows);
+    const meters =
+      `<div class="summary ${summaryClass}">${window.escapeHtml(summaryText)}</div>` +
+      `<div class="muted" style="margin:.4rem 0">Lookups: <b>${ctx.lookups}/${SPF_LOOKUP_LIMIT}</b>` +
+      ` &nbsp;·&nbsp; Void lookups: <b>${ctx.voids}/${SPF_VOID_LIMIT}</b></div>`;
+
+    window.showResult(panel,
+      meters +
+      window.card('Root SPF record', `<pre class="raw">${window.escapeHtml(root.record)}</pre>`, root.record) +
+      window.card('Lookup tree',
+        `<table><thead><tr><th>Mechanism</th><th>Status</th></tr></thead><tbody>${rows.join('')}</tbody></table>`));
+  } catch (e) {
+    window.showError(panel, `Could not reach the DNS resolver. ${e.message || ''}`.trim());
+  }
+}
+
+function countStatuses(node, statuses) {
+  let n = 0;
+  node.terms.forEach((entry) => {
+    if (statuses.includes(entry.status)) n++;
+    if (entry.child && entry.child.record) n += countStatuses(entry.child, statuses);
+  });
+  return n;
+}
+
 // ---------- DMARC ----------
 const DMARC_TAGS = {
   v: 'Protocol version', p: 'Policy for the domain', sp: 'Policy for subdomains',
@@ -349,6 +486,7 @@ function runBuilder(query, panel) {
 }
 
 window.registerRunner('email', 'spf', runSPF);
+window.registerRunner('email', 'spfcheck', runSpfCheck);
 window.registerRunner('email', 'builder', runBuilder);
 window.registerRunner('email', 'dmarc', runDMARC);
 window.registerRunner('email', 'dkim', runDKIM);

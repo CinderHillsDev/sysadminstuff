@@ -182,6 +182,33 @@
     return { record: record.trim(), terms, all: allTerm ? allTerm.qualifier : null };
   }
 
+  // Mechanisms/modifiers that each cost one DNS lookup toward RFC 7208 §4.6.4's
+  // limit of 10. ip4/ip6/all/exp cost nothing. `include` and `redirect` also
+  // recurse into another domain's SPF record (and its lookups count too).
+  const SPF_LOOKUP_MECHS = new Set(['include', 'a', 'mx', 'ptr', 'exists']);
+  // Extract the lookup-costing terms from a raw SPF record, in order. Returns
+  // null if the string isn't an SPF record, else [{ type, value, raw }] where
+  // type is include|a|mx|ptr|exists|redirect and value is the target domain (or
+  // '' when the mechanism defaults to the current domain, e.g. bare `a`/`mx`).
+  function spfLookupTerms(record) {
+    const parsed = parseSpf(record);
+    if (!parsed) return null;
+    const out = [];
+    parsed.terms.forEach((t) => {
+      // `redirect=domain` is a modifier: parseSpf splits on ':' so it lands in
+      // `mechanism` verbatim as "redirect=domain".
+      if (t.mechanism.startsWith('redirect=')) {
+        out.push({ type: 'redirect', value: t.mechanism.slice('redirect='.length), raw: t.raw });
+      } else if (SPF_LOOKUP_MECHS.has(t.mechanism)) {
+        // `a`/`mx` may carry an explicit domain (a:host) or a CIDR (a/24 or
+        // a:host/24) — strip the CIDR, keep the domain (empty = current domain).
+        const value = (t.value || '').split('/')[0];
+        out.push({ type: t.mechanism, value, raw: t.raw });
+      }
+    });
+    return out;
+  }
+
   // ---------- DMARC ----------
   function parseDmarcTags(record) {
     if (!/^v=DMARC1/i.test((record || '').trim())) return null;
@@ -789,7 +816,7 @@
     buildSpf, buildDmarc, cidrContains, splitCidr,
     ipToInt, intToIp, maskToBits, subnetInfo, parseCidrInput,
     b64EncodeUtf8, b64DecodeUtf8, looksLikeBase64, b64urlDecode, decodeJwtParts,
-    parseSpf, SPF_QUALIFIERS, parseDmarcTags,
+    parseSpf, SPF_QUALIFIERS, parseDmarcTags, spfLookupTerms,
     chmodToSymbolic, chmodToOctal, chmodDescribe,
     parseInBase, numberBases, epochToParts, passwordEntropyBits,
     parseCron, cronMatches, nextCronRuns, describeCron, md5,

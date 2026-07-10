@@ -144,6 +144,19 @@ async function runTests() {
   eq('spf softfail', core.parseSpf('v=spf1 ~all').all, '~');
   eq('spf non-spf', core.parseSpf('v=DKIM1; k=rsa'), null);
 
+  // spfLookupTerms — only lookup-costing mechanisms, in order, CIDR stripped
+  const lt = core.spfLookupTerms('v=spf1 include:_spf.google.com a mx a:mail.x.com/24 ip4:1.2.3.0/24 ptr exists:%{i}.x.com -all');
+  eq('spf lookup term count', lt.length, 6); // include,a,mx,a,ptr,exists (ip4/all excluded)
+  eq('spf lookup types', lt.map((t) => t.type), ['include', 'a', 'mx', 'a', 'ptr', 'exists']);
+  eq('spf lookup include target', lt[0].value, '_spf.google.com');
+  eq('spf lookup bare-a self', lt[1].value, ''); // bare `a` -> current domain
+  eq('spf lookup a strips CIDR', lt[3].value, 'mail.x.com');
+  eq('spf lookup exists target', lt[5].value, '%{i}.x.com');
+  const rt = core.spfLookupTerms('v=spf1 redirect=_spf.example.com');
+  eq('spf redirect parsed as lookup', rt.map((t) => [t.type, t.value]), [['redirect', '_spf.example.com']]);
+  eq('spf lookup no-lookup record', core.spfLookupTerms('v=spf1 ip4:1.2.3.4 -all'), []);
+  eq('spf lookup non-spf', core.spfLookupTerms('not spf'), null);
+
   // ================= core.js: DMARC =================
   const dmarc = core.parseDmarcTags('v=DMARC1; p=reject; rua=mailto:r@x.com; pct=100');
   eq('dmarc policy', dmarc.p, 'reject');
