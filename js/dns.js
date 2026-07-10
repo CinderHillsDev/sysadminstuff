@@ -88,14 +88,26 @@ async function doLookup(query, panel, type) {
   }
 }
 
+// DoH-JSON represents each TXT character-string wrapped in double quotes, but
+// resolvers disagree on whether to keep them: Cloudflare and DNS.SB return
+// `"v=spf1 …"`, Google returns it bare. Unwrap so values display and compare
+// identically across resolvers: drop the delimiting quotes, concatenate
+// multi-string records (`"a" "b"` -> `ab`, per RFC 1035), and unescape any
+// embedded quotes.
+function unquoteTxt(v) {
+  if (!(v.startsWith('"') && v.endsWith('"'))) return v;
+  return v.slice(1, -1).replace(/"\s+"/g, '').replace(/\\"/g, '"');
+}
+
 function recordCard(type, rows) {
+  const val = (r) => (type === 'TXT' ? unquoteTxt(String(r.data)) : r.data);
   const body = '<table><thead><tr><th>Name</th><th>TTL</th><th>Type</th><th>Data</th></tr></thead><tbody>' +
     rows.map((r) =>
       `<tr><td>${window.escapeHtml(r.name)}</td><td>${r.TTL}</td><td>${type}</td>` +
-      `<td class="data-cell"><span class="data-val">${window.escapeHtml(r.data)}</span>` +
-      `<button class="copy-cell" data-copy="${window.escapeHtml(r.data)}" title="Copy this record">⧉</button></td></tr>`
+      `<td class="data-cell"><span class="data-val">${window.escapeHtml(val(r))}</span>` +
+      `<button class="copy-cell" data-copy="${window.escapeHtml(val(r))}" title="Copy this record">⧉</button></td></tr>`
     ).join('') + '</tbody></table>';
-  const copyText = rows.map((r) => `${r.name}\t${r.TTL}\t${type}\t${r.data}`).join('\n');
+  const copyText = rows.map((r) => `${r.name}\t${r.TTL}\t${type}\t${val(r)}`).join('\n');
   return window.card(`${type} records`, body, copyText);
 }
 
@@ -119,7 +131,8 @@ async function queryResolver(resolver, name, type) {
   if (!res.ok) throw new Error(String(res.status));
   const data = await res.json();
   const rows = (data.Answer || []).filter((a) => typeName(a.type) === type);
-  return { answers: rows.map((a) => String(a.data)).sort(), ttl: rows[0] ? rows[0].TTL : '' };
+  const norm = type === 'TXT' ? (v) => unquoteTxt(String(v)) : (v) => String(v);
+  return { answers: rows.map((a) => norm(a.data)).sort(), ttl: rows[0] ? rows[0].TTL : '' };
 }
 
 async function runDNSPropagation(query, panel) {
