@@ -128,10 +128,13 @@ function hostFromInput(str) {
   try { return new URL(normalizeURL(str)).hostname; } catch (e) { return str; }
 }
 
-// ---- Shared DNS-over-HTTPS resolution to an IP ----
+// ---- Shared DNS resolution ----
+// Resolved server-side via /api/dns (same origin) rather than talking to a
+// public DoH endpoint from the browser — corporate/captive networks often block
+// cloudflare-dns.com et al., which would otherwise break every DNS-backed tool.
 async function dohQuery(name, type) {
-  const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`;
-  const res = await fetch(url, { headers: { Accept: 'application/dns-json' } });
+  const url = `/api/dns?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`DNS query failed (${res.status})`);
   return res.json();
 }

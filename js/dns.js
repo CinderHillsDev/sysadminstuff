@@ -100,21 +100,22 @@ function recordCard(type, rows) {
 }
 
 // ---------- Propagation ----------
-// Queried directly from the browser (no server) against the public resolvers
-// that expose a JSON DoH API with CORS. Others (Quad9, OpenDNS, AdGuard, …) don't
-// send CORS headers or need non-standard ports, so a browser can't reach them.
+// Queried server-side via /api/dns (same origin) against several public
+// resolvers that expose a JSON DoH API. Going through our own edge means the
+// tool still works on networks that block third-party DoH endpoints in the
+// browser. Others (Quad9, OpenDNS, AdGuard, …) need non-standard ports or don't
+// speak DoH-JSON, so they can't be included.
 const RESOLVERS = [
-  { name: 'Cloudflare', url: 'https://cloudflare-dns.com/dns-query' },
-  { name: 'Google', url: 'https://dns.google/resolve' },
-  { name: 'DNS.SB', url: 'https://doh.sb/dns-query' },
+  { name: 'Cloudflare', key: 'cloudflare' },
+  { name: 'Google', key: 'google' },
+  { name: 'DNS.SB', key: 'dnssb' },
 ];
 const PROP_TYPES = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME'];
 let propType = 'A';
 
 async function queryResolver(resolver, name, type) {
-  const sep = resolver.url.includes('?') ? '&' : '?';
-  const url = `${resolver.url}${sep}name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`;
-  const res = await fetch(url, { headers: { Accept: 'application/dns-json' } });
+  const url = `/api/dns?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&resolver=${encodeURIComponent(resolver.key)}`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(String(res.status));
   const data = await res.json();
   const rows = (data.Answer || []).filter((a) => typeName(a.type) === type);

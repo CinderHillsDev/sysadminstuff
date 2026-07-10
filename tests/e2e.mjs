@@ -91,7 +91,7 @@ async function main() {
     ok('whois blocks RFC1918 400', status === 400);
   }
 
-  // (DNS propagation runs client-side against CORS-capable resolvers — no API endpoint.)
+  // (DNS, incl. propagation, resolves server-side via /api/dns — checked below.)
 
   // M365 tenant lookup (live Microsoft endpoints)
   {
@@ -166,6 +166,32 @@ async function main() {
   {
     const { status } = await getJson('/api/rbl?ip=192.168.1.1');
     ok('rbl blocks RFC1918 400', status === 400);
+  }
+
+  // dns — resolve A record server-side (live resolver)
+  {
+    const { status, json } = await getJson('/api/dns?name=cloudflare.com&type=A');
+    okUpstream('dns A 200', status, status === 200, `status ${status}`);
+    okUpstream('dns A returns answer', status, json && Array.isArray(json.Answer) && json.Answer.some((a) => a.type === 1));
+  }
+  // dns resolver param — propagation tool passes ?resolver=google
+  {
+    const { status, json } = await getJson('/api/dns?name=cloudflare.com&type=A&resolver=google');
+    okUpstream('dns via google 200', status, status === 200, `status ${status}`);
+    okUpstream('dns via google returns answer', status, json && Array.isArray(json.Answer));
+  }
+  // dns validation — OUR logic, always checked
+  {
+    const { status } = await getJson('/api/dns');
+    ok('dns rejects missing name 400', status === 400);
+  }
+  {
+    const { status } = await getJson('/api/dns?name=example.com&type=BOGUS');
+    ok('dns rejects bad type 400', status === 400);
+  }
+  {
+    const { status } = await getJson('/api/dns?name=a%20b.com&type=A');
+    ok('dns rejects malformed name 400', status === 400);
   }
 
   // headers — fetch a live site

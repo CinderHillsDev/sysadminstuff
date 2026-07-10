@@ -440,6 +440,26 @@ async function runTests() {
   check('wordlist all lowercase alpha', wordlist.every((w) => /^[a-z]+$/.test(w)));
   check('wordlist deduped', new Set(wordlist).size === wordlist.length);
 
+  // ================= /api/dns input validation =================
+  const dns = await import('../functions/api/dns.js');
+  // names we must accept: hostnames, DKIM/DMARC labels, reverse-DNS PTR names
+  check('dns name accepts hostname', dns.NAME_RE.test('example.com'));
+  check('dns name accepts _dmarc label', dns.NAME_RE.test('_dmarc.example.com'));
+  check('dns name accepts domainkey selector', dns.NAME_RE.test('sel1._domainkey.example.com'));
+  check('dns name accepts in-addr.arpa PTR', dns.NAME_RE.test('1.0.0.127.in-addr.arpa'));
+  // names we must reject: injection / whitespace / over-length
+  check('dns name rejects space', !dns.NAME_RE.test('a b.com'));
+  check('dns name rejects slash', !dns.NAME_RE.test('example.com/x'));
+  check('dns name rejects query char', !dns.NAME_RE.test('a.com&type=A'));
+  check('dns name rejects empty', !dns.NAME_RE.test(''));
+  check('dns name rejects over-253', !dns.NAME_RE.test('a'.repeat(254)));
+  // every record type the UI can request must be in the allowlist
+  ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'CAA', 'DS', 'DNSKEY']
+    .forEach((t) => check(`dns type allows ${t}`, dns.TYPES.has(t)));
+  check('dns type rejects ANY', !dns.TYPES.has('ANY'));
+  // every resolver key the propagation tool passes must resolve to an endpoint
+  ['cloudflare', 'google', 'dnssb'].forEach((k) => check(`dns resolver ${k}`, !!dns.RESOLVERS[k]));
+
   // ---- report ----
   const total = passed + failures.length;
   if (failures.length) {

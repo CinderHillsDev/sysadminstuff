@@ -28,6 +28,7 @@ const CACHE_TTL = {
   '/api/rbl': 600,
   '/api/tls': 600,
   '/api/headers': 300,
+  '/api/dns': 60,
 };
 
 export async function onRequest(context) {
