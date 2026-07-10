@@ -129,11 +129,44 @@ function hostFromInput(str) {
 }
 
 // ---- Shared DNS resolution ----
-// Resolved server-side via /api/dns (same origin) rather than talking to a
-// public DoH endpoint from the browser — corporate/captive networks often block
-// cloudflare-dns.com et al., which would otherwise break every DNS-backed tool.
-async function dohQuery(name, type) {
-  const url = `/api/dns?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`;
+// Try public DoH straight from the browser first (free — no Worker invocation),
+// and only fall back to our own edge (/api/dns) when that's blocked. Corporate
+// and captive networks routinely block cloudflare-dns.com et al.; the fallback
+// keeps every DNS-backed tool working there while the common case costs us
+// nothing. These endpoints speak DoH-JSON with permissive CORS — keys match
+// /api/dns's ?resolver= values.
+const DOH_DIRECT = {
+  cloudflare: 'https://cloudflare-dns.com/dns-query',
+  google: 'https://dns.google/resolve',
+  dnssb: 'https://doh.sb/dns-query',
+};
+// Per-session memo: once the default resolver proves unreachable (a real network
+// block, not a per-record error), stop paying the failed-fetch latency on every
+// lookup and go straight to the backend for the rest of the session.
+let dohDirectBlocked = false;
+
+async function dohQuery(name, type, resolver = 'cloudflare') {
+  const base = !dohDirectBlocked && DOH_DIRECT[resolver];
+  if (base) {
+    try {
+      const sep = base.includes('?') ? '&' : '?';
+      const url = `${base}${sep}name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`;
+      // Bound the attempt so a black-holing firewall can't hang the first lookup.
+      const res = await fetch(url, { headers: { Accept: 'application/dns-json' }, signal: AbortSignal.timeout(3500) });
+      if (res.ok) {
+        const data = await res.json();
+        // Guard against captive portals that answer 200 with non-DNS HTML/JSON:
+        // a real DoH reply always carries a numeric Status.
+        if (data && typeof data.Status === 'number') return data;
+      }
+    } catch (e) {
+      // Network error / CORS / TLS / timeout — treat a failure of the default
+      // resolver as this network blocking direct DoH for the whole session.
+      if (resolver === 'cloudflare') dohDirectBlocked = true;
+    }
+  }
+  // Server-side fallback: DoH from the Cloudflare edge, same-origin.
+  const url = `/api/dns?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&resolver=${encodeURIComponent(resolver)}`;
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`DNS query failed (${res.status})`);
   return res.json();

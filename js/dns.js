@@ -112,11 +112,11 @@ function recordCard(type, rows) {
 }
 
 // ---------- Propagation ----------
-// Queried server-side via /api/dns (same origin) against several public
-// resolvers that expose a JSON DoH API. Going through our own edge means the
-// tool still works on networks that block third-party DoH endpoints in the
-// browser. Others (Quad9, OpenDNS, AdGuard, …) need non-standard ports or don't
-// speak DoH-JSON, so they can't be included.
+// Queried through window.dohQuery, which hits each public resolver directly from
+// the browser and only falls back to our edge (/api/dns?resolver=…) when that's
+// blocked — so the tool keeps working on locked-down networks without costing a
+// Worker call in the common case. Others (Quad9, OpenDNS, AdGuard, …) need
+// non-standard ports or don't speak DoH-JSON, so they can't be included.
 const RESOLVERS = [
   { name: 'Cloudflare', key: 'cloudflare' },
   { name: 'Google', key: 'google' },
@@ -126,10 +126,7 @@ const PROP_TYPES = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME'];
 let propType = 'A';
 
 async function queryResolver(resolver, name, type) {
-  const url = `/api/dns?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&resolver=${encodeURIComponent(resolver.key)}`;
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(String(res.status));
-  const data = await res.json();
+  const data = await window.dohQuery(name, type, resolver.key);
   const rows = (data.Answer || []).filter((a) => typeName(a.type) === type);
   const norm = type === 'TXT' ? (v) => unquoteTxt(String(v)) : (v) => String(v);
   return { answers: rows.map((a) => norm(a.data)).sort(), ttl: rows[0] ? rows[0].TTL : '' };
