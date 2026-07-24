@@ -30,6 +30,7 @@
       <button class="tab" data-tab="network">Network</button>
       <button class="tab" data-tab="cert">Cert</button>
       <button class="tab" data-tab="whois">Whois</button>
+      <button class="tab" data-tab="myip">My IP</button>
       <button class="tab" data-tab="m365">M365</button>
       <button class="tab" data-tab="cloud">Cloud</button>
       <button class="tab" data-tab="password">Password</button>
@@ -115,6 +116,11 @@
       <div class="subpanel active" id="panel-whois-main"></div>
     </div>
 
+    <!-- My IP — self-contained, reflects the caller's own address -->
+    <div id="tab-myip" class="tab-panel">
+      <div class="subpanel active" id="panel-myip-main"></div>
+    </div>
+
     <!-- M365 / Entra tenant -->
     <div id="tab-m365" class="tab-panel">
       <div class="subpanel active" id="panel-m365-main"></div>
@@ -178,6 +184,7 @@
   <script src="/js/network.js"></script>
   <script src="/js/cert.js"></script>
   <script src="/js/whois.js"></script>
+  <script src="/js/myip.js"></script>
   <script src="/js/m365.js"></script>
   <script src="/js/cloud.js"></script>
   <script src="/js/utils.js"></script>

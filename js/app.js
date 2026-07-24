@@ -14,6 +14,7 @@ const DEFAULT_SUBTAB = {
   network: 'asn',
   cert: 'lookup',
   whois: 'main',
+  myip: 'main',
   m365: 'main',
   cloud: 'ip',
   password: 'main',

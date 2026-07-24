@@ -224,6 +224,14 @@ main {
   letter-spacing: 0.03em;
 }
 
+.bigip {
+  font-family: var(--mono);
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  word-break: break-all;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

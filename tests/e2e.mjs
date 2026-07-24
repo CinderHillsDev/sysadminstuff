@@ -91,6 +91,20 @@ async function main() {
     ok('whois blocks RFC1918 400', status === 400);
   }
 
+  // myip — reflects the caller's own IP + edge metadata. Always OUR endpoint
+  // (no upstream), so a plain ok(). request.cf is sparse under wrangler dev, so
+  // only the always-present shape is asserted here.
+  {
+    const { status, json } = await getJson('/api/myip');
+    ok('myip 200', status === 200, `status ${status}`);
+    ok('myip has ip field', json && typeof json.ip === 'string', JSON.stringify(json && Object.keys(json)));
+    ok('myip has cf keys', json && 'asn' in json && 'colo' in json && 'org' in json);
+  }
+  {
+    const res = await fetch(BASE + '/api/myip', { method: 'OPTIONS' });
+    ok('OPTIONS /api/myip preflight', res.status === 200 && res.headers.get('access-control-allow-origin') === '*');
+  }
+
   // (DNS, incl. propagation, resolves server-side via /api/dns — checked below.)
 
   // M365 tenant lookup (live Microsoft endpoints)
