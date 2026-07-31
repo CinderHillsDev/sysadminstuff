@@ -45,7 +45,7 @@ async function runHTTPHeaders(query, panel) {
     panel.innerHTML =
       `<div class="summary ${scoreCls}">Security headers: ${score}/7 present · final status ${window.escapeHtml(String(final.status))}</div>` +
       window.card('Security headers', `<table><thead><tr><th>Header</th><th>Status</th></tr></thead><tbody>${secRows}</tbody></table>`) +
-      window.card('All response headers', `<table><thead><tr><th>Header</th><th>Value</th></tr></thead><tbody>${allRows}</tbody></table>`);
+      window.card('All response headers', `<table class="headers-table"><thead><tr><th>Header</th><th>Value</th></tr></thead><tbody>${allRows}</tbody></table>`);
   } catch (e) {
     window.showError(panel, e.message || 'Could not fetch headers.');
   }

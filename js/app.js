@@ -263,26 +263,58 @@ function readInput() {
   return val;
 }
 
-function clearInputError() {
-  const el = document.getElementById('input-error');
-  el.hidden = true;
-  el.textContent = '';
-}
-function setInputError(msg) {
-  const el = document.getElementById('input-error');
-  el.hidden = false;
-  el.textContent = msg;
-}
-
 function runFromInput() {
-  clearInputError();
   readInput();
   setParams(state.q, state.tab, state.sub);
   maybeRun(true);
 }
 
+// ---- Theme (system / light / dark) ----
+// The inline script in index.html's <head> already set data-theme before first
+// paint (using the same 'sas-theme' localStorage key) so there's no flash; this
+// just wires up the toggle button and keeps it in sync afterward.
+const THEME_KEY = 'sas-theme';
+const THEME_ORDER = ['system', 'light', 'dark'];
+const THEME_META = {
+  system: { icon: '◐', label: 'System' },
+  light: { icon: '○', label: 'Light' },
+  dark: { icon: '●', label: 'Dark' },
+};
+function resolveTheme(mode) {
+  return mode === 'system'
+    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+    : mode;
+}
+function applyTheme(mode) {
+  document.documentElement.setAttribute('data-theme', resolveTheme(mode));
+  const btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  const meta = THEME_META[mode];
+  btn.querySelector('.icon').textContent = meta.icon;
+  btn.querySelector('.label').textContent = meta.label;
+  btn.setAttribute('aria-label', `Theme: ${meta.label}. Click to change.`);
+  btn.title = `Theme: ${meta.label} (click to change)`;
+}
+function initTheme() {
+  let mode = localStorage.getItem(THEME_KEY) || 'system';
+  applyTheme(mode);
+  const btn = document.getElementById('theme-toggle');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      mode = THEME_ORDER[(THEME_ORDER.indexOf(mode) + 1) % THEME_ORDER.length];
+      localStorage.setItem(THEME_KEY, mode);
+      applyTheme(mode);
+    });
+  }
+  // Live-follow the OS preference while in "system" mode.
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (mode === 'system') applyTheme('system');
+  });
+}
+
 // ---- Wire up events ----
 function init() {
+  initTheme();
   // Primary tabs
   document.querySelectorAll('.tabs.primary .tab').forEach((btn) => {
     btn.addEventListener('click', () => {
