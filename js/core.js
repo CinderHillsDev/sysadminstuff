@@ -131,7 +131,6 @@
   }
 
   // ---------- Base64 (UTF-8 safe) ----------
-  const b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   function _atob(str) {
     if (typeof atob === 'function') return atob(str);
     // Node fallback

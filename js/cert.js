@@ -21,7 +21,7 @@ async function runCert(query, panel) {
     certs.sort((a, b) => new Date(b.not_after) - new Date(a.not_after));
 
     const primary = certs[0];
-    panel.innerHTML = certCard(primary, domain, true) + historyBlock(certs.slice(1, 6), domain);
+    panel.innerHTML = certCard(primary, domain, true) + historyBlock(certs.slice(1, 6));
   } catch (e) {
     window.showError(panel, e.message || 'Certificate lookup failed.');
   }
@@ -59,7 +59,7 @@ function certCard(c, domain, primary) {
   return window.card(primary ? `Certificate — ${domain}` : 'Historical certificate', `<table><tbody>${rows}</tbody></table>`);
 }
 
-function historyBlock(certs, domain) {
+function historyBlock(certs) {
   if (!certs.length) return '';
   const inner = certs.map((c) => {
     const notAfter = new Date(c.not_after).toISOString().slice(0, 10);

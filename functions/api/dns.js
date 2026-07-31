@@ -39,7 +39,7 @@ export const TYPES = new Set([
 ]);
 
 // Hostnames, DKIM/DMARC labels (_dmarc, selector._domainkey) and reverse-DNS
-// names (…​.in-addr.arpa / …​.ip6.arpa) — letters, digits, dot, hyphen, underscore.
+// names (…in-addr.arpa / …ip6.arpa) — letters, digits, dot, hyphen, underscore.
 export const NAME_RE = /^[a-zA-Z0-9._-]{1,253}$/;
 
 export async function onRequest(context) {

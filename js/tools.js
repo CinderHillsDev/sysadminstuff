@@ -2,7 +2,6 @@
 // Chmod, JSON). All run entirely in the browser; nothing is sent anywhere.
 
 function wire(root) { window.wireCopyButtons(root); }
-function copyBtn(text) { return `<button class="copy-btn" data-copy="${window.escapeHtml(text)}">copy</button>`; }
 
 // ================= Hash =================
 async function shaHex(algo, str) {

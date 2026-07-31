@@ -42,7 +42,7 @@ async function runMyIP(_query, panel) {
 
     // Cross-links to the deeper tools, pre-filled with the detected IP.
     const q = encodeURIComponent(d.ip);
-    const links = `<div class="note">Dig deeper: `
+    const links = '<div class="note">Dig deeper: '
       + `<a href="?q=${q}&tab=whois&sub=main">Whois</a> · `
       + `<a href="?q=${q}&tab=network&sub=asn">ASN details</a> · `
       + `<a href="?q=${q}&tab=network&sub=geo">Geolocation</a> · `
