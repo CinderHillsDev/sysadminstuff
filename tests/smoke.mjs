@@ -262,6 +262,10 @@ async function runTests() {
   check('ssrf blocks v4-mapped private', parse.isBlockedHost('::ffff:10.0.0.1'));
   check('ssrf blocks v4-mapped hex metadata', parse.isBlockedHost('::ffff:a9fe:a9fe'));
   check('ssrf allows public v6', !parse.isBlockedHost('2606:4700::1111'));
+  // hostResolvesToBlocked's literal-IP fast path short-circuits before any DNS
+  // I/O, so this stays dependency-free like the rest of this suite.
+  check('hostResolvesToBlocked fast-path blocks literal', await parse.hostResolvesToBlocked('127.0.0.1'));
+  check('hostResolvesToBlocked fast-path blocks localhost', await parse.hostResolvesToBlocked('localhost'));
 
   // ================= lib/parse.mjs: M365 tenant classification =================
   eq('env Commercial (no sub_scope)', parse.classifyTenantEnvironment({ subScope: '', cloudInstance: 'microsoftonline.com' }), 'Commercial');

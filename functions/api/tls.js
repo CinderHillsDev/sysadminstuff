@@ -7,7 +7,7 @@
 // report what we can verify and note the limitation.
 
 import { connect } from 'cloudflare:sockets';
-import { isBlockedHost } from '../../lib/parse.mjs';
+import { hostResolvesToBlocked } from '../../lib/parse.mjs';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -29,14 +29,15 @@ export async function onRequest(context) {
   // (127.1, 2130706433, 0x7f000001, 0177.0.0.1) normalize to dotted-quad before
   // the SSRF guard sees them. IPv6 literals are unsupported and rejected below —
   // the regex forbids ':' so no IPv6 form (bracketed, bare, or expanded) can
-  // reach connect() and slip past isBlockedHost.
+  // reach connect() and slip past hostResolvesToBlocked.
   try { host = new URL(/^https?:\/\//i.test(host) ? host : 'https://' + host).hostname; } catch (e) { /* fall through to validation */ }
   if (!/^[a-zA-Z0-9.-]+$/.test(host)) return json({ error: 'Invalid hostname.' }, 400);
   // Only ever probe the HTTPS port. Accepting an arbitrary port would turn this
   // into an internal port scanner; the UI only ever checks 443.
   const port = 443;
-  // Refuse internal / reserved / loopback targets (SSRF hardening).
-  if (isBlockedHost(host)) return json({ error: 'Refusing to probe internal or reserved addresses.' }, 400);
+  // Refuse internal / reserved / loopback targets (SSRF hardening). Resolves DNS
+  // so a hostname pointed at an internal address can't bypass the check.
+  if (await hostResolvesToBlocked(host)) return json({ error: 'Refusing to probe internal or reserved addresses.' }, 400);
 
   const issues = [];
   let handshakeOK = false;

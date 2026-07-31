@@ -1,7 +1,7 @@
 // functions/api/headers.js — fetch a URL server-side, follow redirects hop by hop.
 // No user input is logged. The user's IP is never forwarded upstream.
 
-import { isBlockedHost } from '../../lib/parse.mjs';
+import { hostResolvesToBlocked } from '../../lib/parse.mjs';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -25,8 +25,9 @@ export async function onRequest(context) {
   let url;
   try { url = new URL(target); } catch (e) { return json({ error: 'Invalid URL.' }, 400); }
   if (!['http:', 'https:'].includes(url.protocol)) return json({ error: 'Only http and https are supported.' }, 400);
-  // Block requests to internal/loopback hosts (SSRF guard).
-  if (isBlockedHost(url.hostname)) return json({ error: 'Refusing to fetch internal or reserved addresses.' }, 400);
+  // Block requests to internal/loopback hosts (SSRF guard). Resolves DNS so a
+  // hostname pointed at an internal address can't bypass the check.
+  if (await hostResolvesToBlocked(url.hostname)) return json({ error: 'Refusing to fetch internal or reserved addresses.' }, 400);
 
   const chain = [];
   let current = url.toString();
@@ -50,7 +51,8 @@ export async function onRequest(context) {
       try { nextUrl = new URL(headers.location, current); } catch (e) { break; }
       // Re-validate scheme AND host on every hop (a redirect could point at
       // file:/gopher: or an internal address).
-      if (!['http:', 'https:'].includes(nextUrl.protocol) || isBlockedHost(nextUrl.hostname)) break;
+      if (!['http:', 'https:'].includes(nextUrl.protocol)) break;
+      if (await hostResolvesToBlocked(nextUrl.hostname)) break;
       current = nextUrl.toString();
     }
     return json(chain);
