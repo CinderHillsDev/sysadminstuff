@@ -39,11 +39,13 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 - **Reverse DNS** — PTR lookup with forward-confirmation.
 
 ### Cert
-- **Lookup** — certificate history via crt.sh (validity, SANs, issuer, expiry).
 - **Decode PEM/CSR** — paste a certificate or CSR and see subject/issuer/SANs/validity/key/signature, parsed entirely in your browser (never uploaded).
 
 ### Whois
 - RDAP-based whois for domains and IPs.
+
+### My IP
+- Reflects your own public IP, ASN/provider, approximate location, and the Cloudflare edge/TLS details of your connection — all read straight off the edge request, no upstream lookup and nothing logged. Cross-links into Whois/ASN/Geo/Reverse DNS/Blacklist pre-filled with your IP.
 
 ### M365
 - **Microsoft 365 / Entra tenant lookup** — given a domain, resolves the tenant ID (GUID), brand name, and Managed vs. Federated (ADFS) identity, and classifies the **cloud environment: Commercial / GCC / GCC High / DoD** (via OpenID Connect metadata `tenant_region_sub_scope` + cloud instance). Also lists other domains in the tenant. Uses only public, unauthenticated Microsoft endpoints — no login required.
@@ -66,7 +68,7 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 
 ## Privacy
 
-sysadminstuff.net does not log, store, or track queries. No analytics. No cookies. No ads. The utility tools (JWT decoder, Base64, URL encode, subnet calculator) run entirely in your browser and never transmit data. See [PRIVACY.md](PRIVACY.md) for full details.
+sysadminstuff.net does not log, store, or track queries. No analytics. No cookies. No ads. The fully client-side tools (Subnet Calculator, Cert Decode PEM/CSR, Password/Passphrase/UUID, and everything under Utils) run entirely in your browser and never transmit data. See [PRIVACY.md](PRIVACY.md) for full details.
 
 The page makes **no external asset requests at all** — the IBM Plex fonts are self-hosted (`css/fonts/*.woff2`, [SIL OFL](https://opensource.org/license/ofl-1-1)) and every script/style is served from the same origin. Nothing (not even a font request) leaks to a third party on page load.
 
@@ -75,7 +77,6 @@ The page makes **no external asset requests at all** — the IBM Plex fonts are 
 ## APIs used (with attribution)
 
 - [Cloudflare DNS-over-HTTPS](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/) — DNS lookups & blacklist queries
-- [crt.sh](https://crt.sh) — certificate transparency logs
 - [RDAP via rdap.org](https://rdap.org) / ARIN — whois data
 - [ipwho.is](https://ipwho.is) — IP geolocation
 - [bgpview.io](https://bgpview.io) — ASN / prefix data
@@ -115,10 +116,10 @@ node tests/e2e.mjs                  # in another (defaults to http://localhost:8
 
 Hosting is effectively free: static files are unlimited on Pages, and the Functions run on the Workers **free tier — a hard 100,000 requests/day cap that fails closed** (the API tools return errors past the limit; they never bill you). Stay on the free plan and there is no surprise-bill scenario.
 
-The real concern is abuse of the API endpoints — several proxy third-party services (`/api/crtsh`, `/api/rbl`, `/api/asn`, `/api/tenant`, `/api/headers`, `/api/tls`) that could rate-limit or ban your IP under load. Two defenses:
+The real concern is abuse of the API endpoints — several proxy third-party services (`/api/rbl`, `/api/asn`, `/api/tenant`, `/api/headers`, `/api/tls`, `/api/dns`) that could rate-limit or ban your IP under load. Two defenses:
 
 1. **Code-level (already in the repo):** `functions/_middleware.js` restricts `/api/*` to read methods (POST → 405), rejects oversized URLs, and **requires a same-origin browser fetch** (`Sec-Fetch-Site`) — so `curl`, scripts, and other sites are turned away with a 403. It's stateless, so it's free and always on. (This stops casual/scripted abuse; a determined attacker can still forge the header, which is what the rate-limit rule below is for.)
-   It also **edge-caches** successful GET responses per endpoint (crtsh/asn/whois/tenant 1h, rbl/tls 10m, headers 5m) via Cloudflare's Cache API, so repeated lookups of the same domain/IP are served from cache and never re-hit the upstream. Responses carry `X-Cache: HIT|MISS`.
+   It also **edge-caches** successful GET responses per endpoint (asn/whois/tenant 1h, rbl/tls 10m, headers 5m, dns 60s) via Cloudflare's Cache API, so repeated lookups of the same domain/IP are served from cache and never re-hit the upstream. Responses carry `X-Cache: HIT|MISS`. `/api/myip` reflects the live per-request edge connection, so it is never cached.
 2. **Rate limiting (set this up once, free):** In the Cloudflare dashboard for the zone → **Security → WAF → Rate limiting rules → Create rule**:
    - **If incoming requests match:** `URI Path` `contains` `/api/`
    - **Rate:** `20` requests per `10` seconds, counting by client IP
@@ -142,9 +143,9 @@ The real concern is abuse of the API endpoints — several proxy third-party ser
 ```
 index.html            privacy.html         wrangler.toml
 css/style.css
-js/    core.js app.js dns.js email.js web.js network.js cert.js whois.js m365.js cloud.js utils.js tools.js
+js/    core.js app.js dns.js email.js web.js network.js cert.js whois.js myip.js m365.js cloud.js utils.js tools.js wordlist.js
 lib/   parse.mjs
-functions/  _middleware.js  api/  whois.js rbl.js tls.js headers.js asn.js tenant.js crtsh.js
+functions/  _middleware.js  api/  whois.js rbl.js tls.js headers.js asn.js tenant.js myip.js dns.js
 tests/ smoke.mjs e2e.mjs README.md
 ```
 

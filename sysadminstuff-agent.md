@@ -2,16 +2,19 @@
 
 A clean, ad-free sysadmin utility site hosted on Cloudflare Pages at sysadminstuff.net.
 Pure HTML/CSS/JS frontend. Server-side logic runs in Cloudflare Pages Functions (JS, no Node deps).
-Source lives in GitHub — Cloudflare Pages auto-deploys on every push to main.
+Source lives in GitHub (`CinderHillsDev/sysadminstuff`) — Cloudflare Pages auto-deploys on every push to main.
+
+This file is a historical build spec, kept roughly in sync with the live site so it stays useful as a reference — not a strict source of truth. When it and the code disagree, trust the code (and `CLAUDE.md`, which is the authoritative day-to-day guidance for working in this repo).
 
 ---
 
 ## Architecture
 
 - **Frontend:** Static HTML/CSS/JS — no framework, no build step
-- **Backend:** Cloudflare Pages Functions in `functions/api/` — auto-routed by Cloudflare
+- **Shared pure logic:** `lib/parse.mjs` (validators/parsers/shaping used by Functions, importable by Node) and `js/core.js` (same idea for the browser, also `require()`'d by `tests/smoke.mjs`) — one implementation shared between the app and its tests
+- **Backend:** Cloudflare Pages Functions in `functions/api/` — auto-routed by Cloudflare. `functions/_middleware.js` gates every `/api/*` request: rejects non-GET/HEAD/OPTIONS, rejects oversized URLs, requires a same-origin `Sec-Fetch-Site` (blocks curl/scripts/other origins), and edge-caches successful GET responses per endpoint via the Cache API
 - **DNS:** Domain already on Cloudflare — just point Pages to sysadminstuff.net in dashboard
-- **Deploy:** Git push to main → Cloudflare auto-deploys everything
+- **Deploy:** Git push to main → Cloudflare auto-deploys everything (static files + functions)
 
 ---
 
@@ -20,60 +23,84 @@ Source lives in GitHub — Cloudflare Pages auto-deploys on every push to main.
 ```
 sysadminstuff/
 ├── CLAUDE.md
+├── sysadminstuff-agent.md
+├── README.md
+├── PRIVACY.md
+├── LICENSE                 # Apache-2.0 + Commons Clause (source-available, not OSI open source)
 ├── wrangler.toml
+├── package.json
 ├── index.html
+├── privacy.html
 ├── css/
-│   └── style.css
+│   ├── style.css
+│   └── fonts/               # self-hosted IBM Plex Sans/Mono (.woff2, SIL OFL)
 ├── js/
-│   ├── app.js              # tab routing, input handling, shared utils
-│   ├── dns.js              # DNS lookup + propagation
-│   ├── email.js            # SPF, DMARC, DKIM, MX, header analyzer, RBL
-│   ├── web.js              # HTTP headers, redirect chain, TLS grade
-│   ├── network.js          # ASN lookup, subnet calc, geo, reverse DNS
-│   ├── cert.js             # cert info via crt.sh
-│   ├── whois.js            # calls /api/whois
-│   └── utils.js            # base64, URL encode, JWT decoder
+│   ├── core.js               # pure validators/parsers shared with tests — no DOM, no network
+│   ├── app.js                # tab routing, input handling, theme toggle, shared UI helpers
+│   ├── dns.js                 # Lookup, Propagation, CAA, DNSSEC
+│   ├── email.js                # SPF, SPF Lookups, DMARC, DKIM, MX, Header Analyzer, Blacklist, Builder
+│   ├── web.js                   # HTTP Headers, Redirects, TLS Grade
+│   ├── network.js                # ASN Lookup, Subnet Calculator, CIDR Tools, Geo, Reverse DNS
+│   ├── cert.js                    # Decode PEM/CSR — 100% client-side
+│   ├── whois.js                    # calls /api/whois
+│   ├── myip.js                      # calls /api/myip
+│   ├── m365.js                       # calls /api/tenant
+│   ├── cloud.js                       # Cloud IP, Fingerprint, ARN
+│   ├── utils.js                        # Base64, URL Encode, JWT Decoder
+│   ├── tools.js                         # Hash, Password/Passphrase/UUID, Epoch, Cron, Chmod, JSON, Base Convert, Regex
+│   └── wordlist.js                       # bundled EFF short wordlist (CC-BY) for the passphrase generator
+├── lib/
+│   └── parse.mjs             # pure logic shared by Functions + tests/smoke.mjs (RDAP/ASN shaping, SSRF host-blocking, tenant parsing, SPF term walking…)
 ├── functions/
+│   ├── _middleware.js         # method/URL/origin gate + per-endpoint edge cache for all /api/*
 │   └── api/
-│       ├── whois.js        # proxies RDAP lookup, avoids CORS
-│       ├── rbl.js          # blacklist/RBL checks across 15 lists
-│       ├── tls.js          # TLS grade — protocol + cipher negotiation
-│       ├── headers.js      # fetch URL server-side, return headers + redirect chain
-│       └── asn.js          # ASN lookup via bgpview.io
-└── README.md
+│       ├── whois.js            # RDAP proxy, falls back to classic whois:43 for TLDs with no RDAP
+│       ├── rbl.js               # blacklist/RBL checks across 15 zones
+│       ├── tls.js                # TLS reachability probe via Workers connect() — grade A/F
+│       ├── headers.js             # fetch a URL server-side, return headers + redirect chain
+│       ├── asn.js                  # ASN/IP lookup via bgpview.io
+│       ├── tenant.js                # M365/Entra tenant lookup via Microsoft public endpoints
+│       ├── myip.js                   # reflects caller's IP/ASN/geo/edge info from request.cf — no upstream call
+│       └── dns.js                     # server-side DoH fallback for when direct browser DoH is blocked
+└── tests/
+    ├── smoke.mjs              # pure-logic unit tests, no network — safe for CI
+    ├── e2e.mjs                 # live checks against a running `wrangler pages dev`
+    └── README.md
 ```
+
+There is no `functions/api/crtsh.js` — a crt.sh-backed "Certificate Lookup" tool existed at one point but was removed after crt.sh became unreliable. `js/cert.js` now only holds the client-side PEM/CSR decoder.
 
 ---
 
 ## Tab Structure
 
 ```
-DNS         → Lookup | Propagation
-Email       → SPF | DMARC | DKIM | MX | Header Analyzer | Blacklist
+DNS         → Lookup | Propagation | CAA | DNSSEC
+Email       → SPF | SPF Lookups | DMARC | DKIM | MX | Header Analyzer | Blacklist | Builder
 Web         → HTTP Headers | Redirects | TLS Grade
-Network     → ASN Lookup | Subnet Calculator | Geo | Reverse DNS
-Cert        → (single tool)
+Network     → ASN Lookup | Subnet Calculator | CIDR Tools | Geo | Reverse DNS
+Cert        → (single tool — Decode PEM/CSR)
 Whois       → (single tool)
-Utils       → Base64 | URL Encode | JWT Decoder
+My IP       → (single tool — reflects the caller's own address, no query needed)
+M365        → (single tool)
+Cloud       → Cloud IP | Fingerprint | ARN
+Password    → (single tool — Password / Passphrase / UUID, all client-side)
+Utils       → Base64 | URL Encode | JWT Decoder | Hash | Epoch | Cron | Chmod | JSON | Base Convert | Regex
 ```
+
+This order matches the primary tab nav in `index.html` and `DEFAULT_SUBTAB` in `js/app.js`. Tabs whose only subtab is `main` (Whois, My IP, M365, Password, and Cert) render a single panel with no secondary subtab nav. The shared input bar (`js/app.js`'s `SHARED_INPUT_TABS`) is shown for DNS/Email/Web/Network/Whois/M365/Cloud and hidden for My IP/Password/Utils/Cert, since those are fully self-contained.
 
 ---
 
-## Design — Dark Terminal Theme
+## Design — Light / Dark / System Theme
 
-- Background: `#0d1117`
-- Surface/cards: `#161b22`
-- Border: `#30363d`
-- Primary text: `#e6edf3`
-- Muted text: `#8b949e`
-- Green (OK/valid): `#3fb950`
-- Yellow (warning): `#d29922`
-- Red (error/expired): `#f85149`
-- Blue (links/accent): `#58a6ff`
-- Font: `'JetBrains Mono', 'Fira Code', monospace` — load JetBrains Mono from Google Fonts
-- Results rendered in monospace, terminal-style
+- Font: self-hosted **IBM Plex Sans** (UI — labels, headings, buttons, tabs) + **IBM Plex Mono** (data — table cells, `pre`/`code`, IDs, hashes). Both loaded from `css/fonts/*.woff2` (SIL OFL) — no Google Fonts, no external requests at all
+- Three theme modes, cycled by the header toggle button: **System** (follows `prefers-color-scheme`, live-updates) → **Light** → **Dark**. Persisted in `localStorage` under `sas-theme`. An inline script in `<head>` sets `data-theme` before first paint so there's no flash
+- Dark tokens (default): bg `#0b0e14`, surface `#131824`, border `#262c3a`, text `#e8ecf3`, muted `#8891a2`, green `#3fb968`, yellow `#d7a13a`, red `#f0605a`, blue `#5b9df0`, accent `#2dd4de`
+- Light tokens: bg `#f5f6f8`, surface `#ffffff`, border `#d9dce2`, text `#1b1f27`, muted `#5b6270`, green `#1a7f4d`, yellow `#8a5d0a`, red `#c62828`, blue `#1868c9`, accent `#0f7a8a`
+- Results rendered in monospace-for-data / sans-for-chrome, as above
 - Responsive — works on mobile
-- Subtle animated cursor blink on the input field
+- Copy buttons on data cells and result blocks (`⧉` on cells, `copy` on cards)
 
 ---
 
@@ -81,148 +108,140 @@ Utils       → Base64 | URL Encode | JWT Decoder
 
 ```html
 <header>
-  <h1>sysadminstuff.net</h1>
-  <p>Clean sysadmin tools. No ads, no fluff.</p>
+  <button id="theme-toggle" class="theme-toggle" aria-label="Toggle color theme">
+    <span class="icon"></span><span class="label"></span>
+  </button>
+  <a href="/" class="home-link">
+    <h1><span class="logo-mark">&gt;_</span>sysadminstuff.net</h1>
+    <p>Clean sysadmin tools. No ads, no fluff.</p>
+  </a>
 </header>
 
 <main>
-  <div class="input-bar">
+  <div class="input-bar" id="input-bar">
     <input id="query" type="text" placeholder="domain, hostname, or IP address" autofocus />
     <button id="run-btn">Run</button>
   </div>
 
-  <nav class="tabs primary">
+  <nav class="tabs primary" id="primary-tabs">
     <button class="tab active" data-tab="dns">DNS</button>
     <button class="tab" data-tab="email">Email</button>
     <button class="tab" data-tab="web">Web</button>
     <button class="tab" data-tab="network">Network</button>
     <button class="tab" data-tab="cert">Cert</button>
     <button class="tab" data-tab="whois">Whois</button>
+    <button class="tab" data-tab="myip">My IP</button>
+    <button class="tab" data-tab="m365">M365</button>
+    <button class="tab" data-tab="cloud">Cloud</button>
+    <button class="tab" data-tab="password">Password</button>
     <button class="tab" data-tab="utils">Utils</button>
   </nav>
 
-  <!-- DNS -->
+  <!-- DNS — representative example of a multi-subtab tab -->
   <div id="tab-dns" class="tab-panel active">
     <nav class="tabs secondary">
       <button class="subtab active" data-subtab="lookup">Lookup</button>
       <button class="subtab" data-subtab="propagation">Propagation</button>
+      <button class="subtab" data-subtab="caa">CAA</button>
+      <button class="subtab" data-subtab="dnssec">DNSSEC</button>
     </nav>
+    <div class="subpanel active" id="panel-dns-lookup"></div>
+    <div class="subpanel" id="panel-dns-propagation"></div>
+    <div class="subpanel" id="panel-dns-caa"></div>
+    <div class="subpanel" id="panel-dns-dnssec"></div>
   </div>
 
-  <!-- Email -->
-  <div id="tab-email" class="tab-panel">
-    <nav class="tabs secondary">
-      <button class="subtab active" data-subtab="spf">SPF</button>
-      <button class="subtab" data-subtab="dmarc">DMARC</button>
-      <button class="subtab" data-subtab="dkim">DKIM</button>
-      <button class="subtab" data-subtab="mx">MX</button>
-      <button class="subtab" data-subtab="headers">Header Analyzer</button>
-      <button class="subtab" data-subtab="rbl">Blacklist</button>
-    </nav>
+  <!-- Email / Web / Network / Cloud / Utils follow the same nav+subpanel
+       pattern — see Tab Structure above for the exact subtab list per tab. -->
+
+  <!-- Single-tool tabs have no secondary nav, just one subpanel -->
+  <div id="tab-cert" class="tab-panel">
+    <div class="subpanel active" id="panel-cert-main"></div>
   </div>
-
-  <!-- Web -->
-  <div id="tab-web" class="tab-panel">
-    <nav class="tabs secondary">
-      <button class="subtab active" data-subtab="httpheaders">HTTP Headers</button>
-      <button class="subtab" data-subtab="redirects">Redirects</button>
-      <button class="subtab" data-subtab="tls">TLS Grade</button>
-    </nav>
+  <div id="tab-whois" class="tab-panel">
+    <div class="subpanel active" id="panel-whois-main"></div>
   </div>
-
-  <!-- Network -->
-  <div id="tab-network" class="tab-panel">
-    <nav class="tabs secondary">
-      <button class="subtab active" data-subtab="asn">ASN Lookup</button>
-      <button class="subtab" data-subtab="subnet">Subnet Calculator</button>
-      <button class="subtab" data-subtab="geo">Geo</button>
-      <button class="subtab" data-subtab="rdns">Reverse DNS</button>
-    </nav>
+  <div id="tab-myip" class="tab-panel">
+    <div class="subpanel active" id="panel-myip-main"></div>
   </div>
-
-  <div id="tab-cert" class="tab-panel"></div>
-  <div id="tab-whois" class="tab-panel"></div>
-
-  <!-- Utils — each tool is self-contained, no shared input bar -->
-  <div id="tab-utils" class="tab-panel">
-    <nav class="tabs secondary">
-      <button class="subtab active" data-subtab="base64">Base64</button>
-      <button class="subtab" data-subtab="urlencode">URL Encode</button>
-      <button class="subtab" data-subtab="jwt">JWT Decoder</button>
-    </nav>
+  <div id="tab-m365" class="tab-panel">
+    <div class="subpanel active" id="panel-m365-main"></div>
+  </div>
+  <div id="tab-password" class="tab-panel">
+    <div class="subpanel active" id="panel-password-main"></div>
   </div>
 </main>
 
 <footer>
-  Open source · <a href="https://github.com/YOUR_GITHUB/sysadminstuff">GitHub</a>
+  No logs. No tracking. No ads. Queries are not stored or recorded.
+  <a href="/privacy">Privacy</a> ·
+  Source available · <a href="https://github.com/CinderHillsDev/sysadminstuff">GitHub</a>
 </footer>
 ```
 
 - Enter key triggers Run
-- Switching tabs/subtabs re-runs if query changed
+- Switching tabs/subtabs re-runs if the query changed (`lastRan` memo per tab:sub key avoids redundant re-fetches)
 - Spinner/loading state per panel
 - Copy icon on all result blocks
-- URL params: `?q=example.com&tab=dns&sub=propagation` — update via history.pushState
-- Small "?" tooltip on each subtab explaining what it does
-- Utils tab ignores the shared input bar — each util has its own inputs
+- URL params: `?q=example.com&tab=dns&sub=propagation` — updated via `history.pushState`, restored on load and on popstate
+- Small tooltip (`data-tip`) on each subtab explaining what it does
+- Utils/Password/My IP/Cert tabs ignore the shared input bar — each has its own inputs or needs none
 
 ---
 
 ## Cloudflare Pages Functions
 
 Each file in `functions/api/` exports an `onRequest` handler.
-All functions return `Content-Type: application/json`.
-All functions handle CORS with `Access-Control-Allow-Origin: *`.
-All functions handle OPTIONS preflight requests.
+All functions return `Content-Type: application/json`, set `Access-Control-Allow-Origin: *`, and handle `OPTIONS` preflight. None of them ever log user input — see Privacy Requirements below. `functions/_middleware.js` runs in front of all of them.
 
 ### functions/api/whois.js
 - Detect IP vs domain from `?q=` param
-- Domain → `https://rdap.org/domain/{query}`
-- IP → `https://rdap.arin.net/registry/ip/{query}`
-- Return parsed RDAP JSON
+- Domains: RDAP via `rdap.org`, plus a small set of registry overrides for TLDs missing from the IANA bootstrap (`RDAP_BOOTSTRAP_OVERRIDES` in `lib/parse.mjs`)
+- If a TLD has no RDAP support at all, falls back to classic whois: ask `whois.iana.org` for the TLD's referral server over TCP 43 (via `cloudflare:sockets` `connect()`), then query that server and return the raw text
+- IPs: RDAP via `rdap.arin.net`
+- SSRF guard (`isBlockedHost`) rejects internal/reserved targets before any upstream call
 
 ### functions/api/rbl.js
-Check these 15 blacklists — reverse IP octets, prepend to zone, do A lookup.
-If it resolves = listed. Run all 15 in parallel.
+Check 15 blacklists — reverse the IP's octets, prepend to each zone, do an A lookup via Cloudflare DoH. A resolving answer means listed. All 15 run in parallel.
 
-Zones to check:
-- `zen.spamhaus.org`
-- `bl.spamcop.net`
-- `b.barracudacentral.org`
-- `dnsbl.sorbs.net`
-- `spam.dnsbl.sorbs.net`
-- `cbl.abuseat.org`
-- `dnsbl-1.uceprotect.net`
-- `dnsbl-2.uceprotect.net`
-- `bl.mailspike.net`
-- `hostkarma.junkemailfilter.com`
-- `noptr.spamrats.com`
-- `spam.spamrats.com`
-- `dyna.spamrats.com`
-- `ix.dnsbl.manitu.net`
-- `db.wpbl.info`
+Zones checked:
+`zen.spamhaus.org`, `bl.spamcop.net`, `b.barracudacentral.org`, `dnsbl.sorbs.net`, `spam.dnsbl.sorbs.net`, `cbl.abuseat.org`, `dnsbl-1.uceprotect.net`, `dnsbl-2.uceprotect.net`, `bl.mailspike.net`, `hostkarma.junkemailfilter.com`, `noptr.spamrats.com`, `spam.spamrats.com`, `dyna.spamrats.com`, `ix.dnsbl.manitu.net`, `db.wpbl.info`.
 
 Return: `[{ list, listed: bool, response }]`
 
 ### functions/api/tls.js
-Use Cloudflare Workers `connect()` TCP API:
-- Attempt TLS 1.0, 1.1, 1.2, 1.3 connections to the host
-- Report which versions accepted/rejected
-- Report negotiated cipher suite per successful connection
-- Check: self-signed, expired, hostname mismatch
-- Grade: A (TLS 1.3 only or 1.2+1.3 strong ciphers), B (TLS 1.2 weak ciphers), C (TLS 1.1 accepted), F (TLS 1.0 accepted or expired cert)
+Uses the Cloudflare Workers `connect()` TCP API to probe TLS reachability — **not** a full protocol/cipher matrix. Workers can't pin a specific TLS version per socket, so the check is:
+- Attempt a handshake with `secureTransport: 'on'` (Workers negotiate modern TLS 1.2/1.3 and validate the certificate chain)
+- Success → **grade A** ("modern TLS + valid cert"); the exact negotiated version/cipher isn't exposed by the platform, so it's reported as "TLS 1.2 / 1.3" together
+- Failure → **grade F**, with a best-effort reason (certificate problem, timeout, other handshake failure)
+- Legacy TLS 1.0/1.1 can't be probed this way (Workers won't negotiate down to them), so there is no B/C grade tier — it's binary
+- Only ever probes port 443, to avoid becoming an arbitrary internal port scanner
+- SSRF guard (`hostResolvesToBlocked`) resolves DNS and rejects internal/reserved targets before connecting
 
 ### functions/api/headers.js
 - Accept `?url=` param
-- Fetch target server-side, follow redirects manually (step by step)
+- Fetch target server-side, follow redirects manually hop by hop (capped at `MAX_HOPS`)
 - Return: `[{ url, status, headers }]` for each hop in the redirect chain
 - Final entry is the destination
+- SSRF-guarded; the caller's IP is never forwarded upstream
 
 ### functions/api/asn.js
-- Accept `?q=` param — ASN number (AS13335 or 13335) or IP address
+- Accept `?q=` param — ASN number (`AS13335` or `13335`) or IP address
 - ASN → `https://api.bgpview.io/asn/{asn}`
 - IP → `https://api.bgpview.io/ip/{ip}`
-- Return: ASN, name, country, description, announced prefixes
+- Return: ASN, name, country, description, announced prefixes (shaped by `lib/parse.mjs`)
+
+### functions/api/tenant.js
+Microsoft 365 / Entra ID tenant lookup using public, unauthenticated Microsoft endpoints — no login, no API key.
+- OpenID Connect metadata (`login.microsoftonline.com/{domain}/v2.0/.well-known/openid-configuration`) → tenant GUID, region + sub-scope, cloud instance → classified into Commercial / GCC / GCC High / DoD
+- `GetUserRealm` → brand name, Managed vs. Federated (ADFS) identity
+- `GetFederationInformation` (SOAP/Autodiscover) → other domains in the same tenant, best-effort
+
+### functions/api/myip.js
+Reflects the caller's own public IP and whatever Cloudflare already knows about the request (`CF-Connecting-IP`, `request.cf`: ASN, org, city/region/country, colo, TLS version/cipher, HTTP protocol). No upstream call at all — everything comes from the edge for free, so it's never cached (the response is inherently per-request).
+
+### functions/api/dns.js
+Server-side DNS-over-HTTPS fallback. The browser queries public DoH resolvers directly first (`js/app.js`'s `dohQuery`); this endpoint exists only for networks that block direct DoH (corporate proxies, captive portals) so DNS-backed tools keep working via same-origin `/api/dns`. Not a user-facing "feature" on its own — it's plumbing behind DNS/CAA/DNSSEC/MX/SPF/RBL/etc.
 
 ---
 
@@ -232,217 +251,225 @@ Use Cloudflare Workers `connect()` TCP API:
 
 **Lookup subtab:**
 - Record type pills: A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, ALL
-- Cloudflare DoH: `https://cloudflare-dns.com/dns-query?name={domain}&type={type}`
-  - Header: `Accept: application/dns-json`
-- ALL: run all types in parallel via Promise.all, group results by type
-- PTR: auto-reverse IP input (1.2.3.4 → 4.3.2.1.in-addr.arpa)
+- Queries via `window.dohQuery` — tries the public resolver directly from the browser first, falls back to `/api/dns` if that's blocked
+- ALL: runs all non-PTR types in parallel, groups results by type
+- PTR: auto-reverses an IP input (`1.2.3.4` → `4.3.2.1.in-addr.arpa`)
 - Display: table per type — Name | TTL | Type | Data
 
 **Propagation subtab:**
-- Query same record across 5 resolvers in parallel:
-  - Cloudflare: `https://cloudflare-dns.com/dns-query`
-  - Google: `https://dns.google/resolve`
-  - OpenDNS: `https://doh.opendns.com/dns-query`
-  - Quad9: `https://dns.quad9.net/dns-query`
-  - AdGuard: `https://dns.adguard.com/dns-query`
+- Queries the same record across 3 resolvers in parallel, straight from the browser (no backend hop for the common case): **Cloudflare**, **Google**, **DNS.SB**
 - Table: Resolver | Answer | TTL | Status
-- All agree → green summary; any differ → yellow warning
-- "✓ Propagated consistently" or "⚠ Inconsistent — may still be propagating"
+- All agree → green "propagated consistently" summary; any differ → grey/yellow
+
+**CAA subtab:**
+- Looks up the `CAA` record type; parses flags/tag/value
+- No CAA records → warns that *any* CA may issue for the domain
+- Summarizes which CAs are authorized to issue (from `issue`/`issuewild` tags)
+
+**DNSSEC subtab:**
+- Queries A (for the resolver's `AD` flag), DS, and DNSKEY in parallel
+- Signed if the `AD` flag is set or DS records exist in the parent zone
+- Shows AD flag / DS record count / DNSKEY count, plus the raw DS records if present
 
 ---
 
 ### js/email.js
 
 **SPF subtab:**
-- TXT lookup on bare domain via Cloudflare DoH
-- Find record starting with `v=spf1`
-- Display raw record + parsed mechanisms table: Mechanism | Value | Plain English
+- TXT lookup on the bare domain via Cloudflare DoH; finds the `v=spf1` record
+- Display raw record + parsed mechanisms table with plain-English explanations
 - Qualifiers explained: `+` pass, `-` fail, `~` softfail, `?` neutral
-- Mechanisms explained: ip4, ip6, include, a, mx, exists, redirect, exp, all
-- Summary card: overall policy in plain English
-- If none found: "No SPF record found"
+
+**SPF Lookups subtab:**
+- Walks the full `include`/`redirect` tree recursively and counts DNS lookups against **RFC 7208 §4.6.4**: at most 10 lookups, at most 2 "void" lookups (no records returned) — exceeding either is a PermError
+- Flags dead includes, cycles, and void `a`/`mx` targets in the tree
+- `exists` mechanisms are counted but never resolved (an NXDOMAIN there is a normal macro-driven existence test, not an error)
 
 **DMARC subtab:**
-- TXT lookup on `_dmarc.{domain}`
-- Parse all tags: v, p, sp, pct, rua, ruf, adkim, aspf, fo, ri
-- Display raw record + parsed tag table: Tag | Value | Plain English
-- Summary card: policy badge NONE (grey) / QUARANTINE (yellow) / REJECT (green)
-- Show report addresses, pct value
-- Warning if `p=none`: "Monitoring mode only — mail will not be rejected"
+- TXT lookup on `_dmarc.{domain}`; parses all tags (v, p, sp, pct, rua, ruf, adkim, aspf, fo, ri)
+- Policy badge: NONE (grey) / QUARANTINE (yellow) / REJECT (green)
+- Warns if `p=none`: monitoring mode only
 
 **DKIM subtab:**
-- Selector input (placeholders: google, selector1, default, mail)
-- TXT lookup on `{selector}._domainkey.{domain}`
-- Parse: v, k, p (truncated + bit length), t
-- Warning if `t=y`: "Testing mode — failures won't affect delivery"
+- Selector input; TXT lookup on `{selector}._domainkey.{domain}`
+- Parses v, k, p (truncated + bit length), t; warns on `t=y` (testing mode)
 
 **MX subtab:**
-- MX lookup, for each host: resolve to IPs, do PTR lookup on each IP
+- MX lookup; for each host resolves IPs and does a PTR lookup on each
 - Table: Priority | MX Host | IP(s) | PTR Record | PTR Match ✓/✗
-- Flag PTR mismatches in yellow
 
 **Header Analyzer subtab:**
-- Large textarea: "Paste raw email headers here"
-- Parse `Received:` chain in reverse — show each hop, timestamp, delay between hops
-- Extract: SPF/DKIM/DMARC authentication results, X-Spam headers, Message-ID, Date
-- Authentication results highlighted: pass = green, fail = red, none = grey
-- Routing path displayed as a visual chain
+- Paste raw email headers; parses the `Received:` chain in reverse with per-hop delays
+- Extracts SPF/DKIM/DMARC authentication results, X-Spam headers, Message-ID, Date
+- Runs entirely client-side
 
 **Blacklist subtab:**
-- Input: IP or domain (resolve domain to IP first)
-- Calls `/api/rbl?ip={ip}`
-- Table: Blacklist | Status | Response
-- Listed = red, Clean = green
-- Summary: "Listed on X of 15 checked blacklists"
+- Input: IP or domain (resolves domain to IP first)
+- Calls `/api/rbl?ip={ip}` — table of all 15 zones, listed = red, clean = green
+
+**Builder subtab:**
+- Form-based SPF record builder (ip4 list, includes, a/mx flags, `~all`/`-all`/`?all` policy) and DMARC record builder (policy, pct, alignment mode, rua) — generates the raw TXT record text, entirely client-side
 
 ---
 
 ### js/web.js
 
 **HTTP Headers subtab:**
-- Calls `/api/headers?url={url}` 
-- Display all response headers: Header | Value
-- Security headers section — check presence of:
-  - `Strict-Transport-Security` 
-  - `Content-Security-Policy`
-  - `X-Frame-Options`
-  - `X-Content-Type-Options`
-  - `Referrer-Policy`
-  - `Permissions-Policy`
-  - `X-XSS-Protection`
-- Present = green, Missing = yellow
-- Overall security score: X/7 headers present
+- Calls `/api/headers?url={url}`; displays all response headers
+- 7-point security-header scorecard: `Strict-Transport-Security`, `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `X-XSS-Protection`
 
 **Redirects subtab:**
-- Uses same `/api/headers` endpoint
-- Display each hop: Step | URL | Status Code | Location
-- 301 = green (permanent), 302 = yellow (temporary), other = grey
-- Final destination highlighted
-- Warn if >3 hops
+- Uses the same `/api/headers` endpoint; displays each hop (Step | URL | Status | Location)
+- 301 = green (permanent), 302 = yellow (temporary); warns past 3 hops
 
 **TLS Grade subtab:**
 - Calls `/api/tls?host={hostname}`
-- Grade badge: A / B / C / F
-- TLS versions table: Version | Supported ✓/✗
-- Negotiated cipher suite per version
-- Issues list: weak ciphers, old protocols, cert problems
+- Grade badge is **A or F only** (see the `functions/api/tls.js` section above for why) — a successful modern-TLS handshake with a valid cert is A, anything else is F
 
 ---
 
 ### js/network.js
 
 **ASN Lookup subtab:**
-- Input: ASN number (AS13335 or 13335) or IP address
-- Calls `/api/asn?q={query}`
-- Display: ASN, org name, country, description, announced prefixes list
+- Input: ASN (`AS13335` or `13335`) or IP; calls `/api/asn?q={query}`
+- Displays ASN, org name, country, description, announced prefixes
 
 **Subnet Calculator subtab:**
-- Input: CIDR (e.g. 192.168.1.0/24) or IP + subnet mask
-- Entirely client-side, no API
-- Display:
-  - Network address
-  - Broadcast address
-  - Subnet mask + wildcard mask
-  - Usable host range (first → last)
-  - Number of usable hosts
-  - IP class (A/B/C)
+- Input: CIDR or IP + mask — entirely client-side, no API
+- Network/broadcast address, mask + wildcard, usable host range, host count, IP class
+
+**CIDR Tools subtab:**
+- Is-IP-in-CIDR check, and splitting a CIDR into smaller subnets — entirely client-side
 
 **Geo subtab:**
-- If hostname: resolve to IP via Cloudflare DoH first
-- `GET http://ip-api.com/json/{ip}?fields=status,country,countryCode,regionName,city,isp,org,as,query,reverse`
-- Display: IP, Country + flag emoji, Region, City, ISP, Org, ASN
-- Note: "Geolocation is approximate"
-- If blocked due to HTTP/HTTPS mismatch: show friendly explanation + link to ip-api.com
+- Resolves hostname → IP via DoH first if needed
+- `GET https://ipwho.is/{ip}` (HTTPS + CORS, no API key, callable directly from the browser)
+- Displays IP, country + flag, region, city, ISP, org, ASN; notes geolocation is approximate
 
 **Reverse DNS subtab:**
-- Input: IP address
-- PTR lookup via Cloudflare DoH (auto-reverse the IP)
-- Display: IP → PTR hostname
-- Then forward-confirm: resolve PTR hostname back to IP, check if it matches
-- Show: PTR Record | Forward Confirmed ✓/✗
+- PTR lookup via DoH (auto-reverses the IP), then forward-confirms by resolving the PTR hostname back and checking the match
 
 ---
 
-### js/cert.js
+### js/cert.js — Decode PEM/CSR (100% client-side)
 
-- `GET https://crt.sh/?q={domain}&output=json`
-- Sort by `not_after` descending
-- Primary cert display:
-  - Status badge: VALID (green) / EXPIRING SOON ≤30 days (yellow) / EXPIRED (red)
-  - Common Name, SANs (highlight queried domain), Issuer
-  - Valid From → Valid To, days remaining
-  - Serial number
-- Collapsible: up to 5 historical certs below
+- Paste a PEM certificate (`-----BEGIN CERTIFICATE-----`) or CSR (`-----BEGIN CERTIFICATE REQUEST-----`)
+- Parsed entirely in the browser via `window.parseCertificate`/`window.parseCsr` (implemented in `js/core.js`, shared with `tests/smoke.mjs`) — nothing is ever uploaded
+- Certificate view: status badge (VALID/EXPIRING SOON ≤30 days/EXPIRED), subject, issuer, SANs, serial, validity window, public key (algorithm + size), signature algorithm
+- CSR view: subject, requested SANs, public key, signature algorithm
+- This is the only thing left in the Cert tab. A `functions/api/crtsh.js` proxy backed a second "Lookup" subtab (certificate-transparency history from crt.sh) that was removed once crt.sh became unreliable — see the git history around the "Cert" tab if that's ever worth reviving with a different CT-log source.
 
 ---
 
 ### js/whois.js
 
-- Detect IP vs domain
-- Calls `/api/whois?q={query}`
-- Domains: Registrar, Status flags, Created, Updated, Expires, Name servers
-- IPs: Network name, CIDR, Country, Org, Abuse contact
-- Fallback link to https://lookup.icann.org if empty result
+- Detects IP vs domain, calls `/api/whois?q={query}`
+- Domains: Registrar, status flags, Created, Updated, Expires, name servers (falls back to classic whois:43 text for TLDs with no RDAP — rendered as-is)
+- IPs: Network name, CIDR, country, org, abuse contact
+- Fallback link to `https://lookup.icann.org` if the result is empty
 
 ---
 
-### js/utils.js — all client-side, no API calls
+### js/myip.js
 
-**Base64 subtab:**
-- Two textareas: Input | Output
-- Encode / Decode buttons
-- Auto-detect: if input looks like base64, default to decode mode
+- Self-contained — needs no query, runs as soon as the tab opens
+- Calls `/api/myip`; big copyable IP up top, then network (ASN/org/location/postal/timezone/coordinates) and connection (Cloudflare colo, HTTP protocol, TLS version/cipher, user agent) tables
+- Cross-links into Whois / ASN / Geo / Reverse DNS / Blacklist, pre-filled with the detected IP
 
-**URL Encode subtab:**
-- Two textareas: Input | Output
-- Encode / Decode buttons
-- Uses `encodeURIComponent` / `decodeURIComponent`
+---
 
-**JWT Decoder subtab:**
-- Single textarea for JWT paste
-- Auto-decode on input (no button needed)
-- Three sections: Header | Payload | Signature
-- Pretty-print JSON for header and payload
-- `exp` shown as human-readable date, highlighted red if expired
-- Signature: show raw value, note that verification requires the secret key
-- Prominent note: "Decoded entirely in your browser. Your token is never sent anywhere."
+### js/m365.js
+
+- Single query input (domain); calls `/api/tenant?domain={domain}`
+- Shows tenant ID, brand name, Managed vs. Federated identity, cloud environment badge (Commercial/GCC/GCC High/DoD), and other domains in the tenant
+
+---
+
+### js/cloud.js
+
+**Cloud IP subtab:**
+- Resolves input to an IP, rejects private/reserved addresses
+- First tries an exact match against AWS's published ranges (`ip-ranges.amazonaws.com/ip-ranges.json`) for precise region + service
+- Falls back to classifying the ASN org (via `ipwho.is` connection/ISP field) for non-AWS providers
+
+**Fingerprint subtab:**
+- Infers the hosting/CDN, email, and DNS provider behind a domain from its CNAME/MX/NS records — runs in the browser via DoH
+
+**ARN subtab:**
+- Breaks an AWS ARN into partition/service/region/account/resource — entirely client-side
+
+---
+
+### js/utils.js — Base64, URL Encode, JWT Decoder (all client-side, no network)
+
+- **Base64:** two textareas, encode/decode, auto-detects base64 input and defaults to decode
+- **URL Encode:** two textareas, `encodeURIComponent`/`decodeURIComponent`
+- **JWT Decoder:** auto-decodes on input (no button); header/payload/signature sections, `exp` shown as a human-readable date highlighted red if expired, notes that verifying the signature requires the secret/key
+
+`b64EncodeUtf8`/`b64DecodeUtf8`/`looksLikeBase64`/`decodeJwtParts` live in `js/core.js` so the browser and `tests/smoke.mjs` share one implementation.
+
+---
+
+### js/tools.js — Hash, Password/Passphrase/UUID, Epoch, Cron, Chmod, JSON, Base Convert, Regex (all client-side)
+
+- **Hash** (registered under the Utils tab): live MD5, SHA-1/256/384/512 as you type, via `crypto.subtle` (+ a bundled MD5 implementation, since SubtleCrypto doesn't support it)
+- **Password / Passphrase / UUID** (its own top-level Password tab): cryptographically random password generator (length, character-set toggles, "avoid ambiguous characters" I/l/1/i/O/0/o/|) with an entropy readout; passphrase generator drawing from the bundled EFF short wordlist (`js/wordlist.js`, 1296 words) with separator/capitalize/number/symbol options and its own entropy readout; UUID v4 via `crypto.randomUUID()`
+- **Epoch:** Unix timestamp ↔ human date, both directions
+- **Cron:** explains a cron expression in plain English + next run times
+- **Chmod:** octal ↔ symbolic permission calculator
+- **JSON:** format / validate / minify
+- **Base Convert:** hex/dec/oct/bin conversion
+- **Regex:** test a pattern against sample text with match highlighting
+
+All of `crypto.getRandomValues`/`crypto.subtle`/`crypto.randomUUID` — nothing here ever leaves the browser.
 
 ---
 
 ### js/app.js — Shared Utilities
 
 ```javascript
+// Registry — modules call this instead of exposing window.runX directly
+function registerRunner(tab, subtab, fn) { RUNNERS[`${tab}:${subtab}`] = fn; }
+
 // URL param handling
 function getParams() { ... }               // parse ?q=&tab=&sub=
 function setParams(q, tab, sub) { ... }    // history.pushState
 
-// Shared resolution
-async function resolveToIP(hostname) { ... } // Cloudflare DoH A lookup
-
 // UI helpers
-function showLoading(panelId) { ... }
-function showError(panelId, message) { ... }
-function showResult(panelId, html) { ... }
+function showLoading(panel, label) { ... }
+function showError(panel, message) { ... }
+function showResult(panel, html) { ... }
+function card(title, bodyHtml, copyText) { ... }
+function wireCopyButtons(root) { ... }
 function copyToClipboard(text) { ... }
 
-// Input validation
-function isIP(str) { ... }
-function isDomain(str) { ... }
-function isCIDR(str) { ... }
-function isASN(str) { ... }    // matches AS12345 or bare 12345
-function isURL(str) { ... }    // for web tab inputs
+// Input helpers
+function hostFromInput(str) { ... }        // isIP/isDomain from core.js, else URL().hostname
+
+// Shared DNS resolution — tries public DoH straight from the browser first
+// (free, no Worker invocation), falls back to /api/dns only when that's blocked
+async function dohQuery(name, type, resolver = 'cloudflare') { ... }
+async function resolveToIP(hostname) { ... }
+
+// Theme (system / light / dark), persisted to localStorage as 'sas-theme'
+function applyTheme(mode) { ... }
+function initTheme() { ... }
+
+// Tab/subtab activation, driven by SHARED_INPUT_TABS / NO_QUERY_SUBTABS / DEFAULT_SUBTAB
+function activate(tab, sub, opts) { ... }
 ```
+
+Pure validators (`isIP`, `isIPv4`, `isIPv6`, `isDomain`, `isCIDR`, `isASN`, `isURL`, `normalizeURL`) live in `js/core.js`, not `app.js` — that keeps a single implementation shared with `tests/smoke.mjs`.
 
 ---
 
 ## Error Handling
 
-- Network errors: "Could not reach [service]. Check your connection or try again."
+- Network errors: "Could not reach [service]. Try again shortly."
 - No records found: "No [type] records found for [domain]."
-- Invalid input: validate before running, show inline error under input bar
-- ip-api.com 429: "Rate limit reached (45 req/min). Wait a moment and try again."
-- All errors styled red, non-blocking — each panel fails independently
-- One broken API never breaks another tab
+- Invalid input: validated before running, inline error in the panel
+- Upstream rate limits: surfaced as a plain-English error from the relevant function (e.g. bgpview.io/ipwho.is/RDAP being slow or rate-limited); the API never bills you past Cloudflare's free-tier request cap
+- All errors styled red (`showError`), non-blocking — each panel fails independently, one broken API never breaks another tab
 
 ---
 
@@ -451,6 +478,7 @@ function isURL(str) { ... }    // for web tab inputs
 ```toml
 name = "sysadminstuff"
 pages_build_output_dir = "."
+compatibility_date = "2025-07-01"
 ```
 
 ---
@@ -471,27 +499,30 @@ pages_build_output_dir = "."
 - One paragraph description
 - Live link: https://sysadminstuff.net
 - Full feature list organized by tab
-- APIs used with attribution: Cloudflare DoH, crt.sh, RDAP/ARIN, ip-api.com, bgpview.io, Spamhaus et al
+- APIs used with attribution: Cloudflare DoH, RDAP/ARIN, ipwho.is, bgpview.io, AWS published IP ranges, Microsoft public endpoints, DNS blacklists (Spamhaus et al) — no crt.sh
 - Run locally: `npx wrangler pages dev .` (runs static files + functions together)
+- Smoke/e2e test instructions
+- Abuse protection & cost section (Workers free-tier cap, middleware defenses, optional Cloudflare rate-limiting rule)
 - Cloudflare Pages deploy steps
+- Project structure
 - Contributing guide
-- MIT License
+- **License: Apache-2.0 + Commons Clause** (source-available, not MIT — see `LICENSE`)
 
 ---
 
 ## Implementation Notes for Claude Code
 
-- No npm required for the frontend — plain JS files only
+- No npm required for the frontend — plain JS files only; `package.json` exists only for `eslint` (devDependency) and the `npm test`/`npm run lint` scripts
 - For local dev with Functions: `npx wrangler pages dev .`
-- Each js/ file exposes its run function on `window` (e.g. `window.runDNS = runDNS`)
+- Each `js/<tab>.js` module registers its run function via `window.registerRunner(tab, subtab, fn)` — it does **not** assign `window.runX` directly
 - Each `functions/api/*.js` must export `onRequest` as a named export
 - All functions must set `Access-Control-Allow-Origin: *` and handle OPTIONS preflight
 - Test domains: `google.com`, `github.com`, `cloudflare.com`
 - Test IP: `1.1.1.1`
 - Test ASN: `AS13335` (Cloudflare)
-- Utils tab tools work with zero network — fully offline capable
-- Keep each js/ file and each function independently testable
-- The shared input bar is hidden/ignored when Utils tab is active
+- Utils/Password/My IP tabs work with zero network — fully offline capable (My IP is the odd one: it calls `/api/myip`, but that endpoint has no upstream dependency of its own)
+- Keep each js/ file and each function independently testable — add/update a `tests/smoke.mjs` check for any pure-logic change
+- The shared input bar is hidden for tabs in `NO_QUERY_SUBTABS`/outside `SHARED_INPUT_TABS` (Utils, Password, My IP, Cert)
 
 ---
 
@@ -524,45 +555,46 @@ Every function in `functions/api/` must follow these rules:
 
 - No Google Analytics, no Plausible, no Fathom, no tracking pixels, no beacon calls
 - No cookies set anywhere — not even session cookies
-- No localStorage or sessionStorage used for anything beyond UI state (e.g. last selected tab)
-- No external scripts loaded except JetBrains Mono from Google Fonts — and add a note in the README that even this can be self-hosted if desired
+- No localStorage or sessionStorage used for anything beyond UI state (selected theme, last selected tab)
+- No external scripts or assets loaded at all — even the fonts (IBM Plex Sans/Mono) are self-hosted, so nothing leaks to a third party just from loading the page
 
 ### Client-side only tools — reinforce in UI
 
-The following tools never send data anywhere and must display a visible note saying so:
+These tools never send data anywhere and must display a visible note saying so:
 
-- **JWT Decoder:** "Decoded entirely in your browser. Your token is never sent to our servers or anywhere else."
-- **Base64:** "Encoded/decoded entirely in your browser."
-- **URL Encode:** "Encoded/decoded entirely in your browser."
-- **Subnet Calculator:** "Calculated entirely in your browser."
+- **Cert → Decode PEM/CSR:** certificate/CSR parsing never leaves the browser
+- **Password tab (Password / Passphrase / UUID):** generated with a cryptographic RNG, never transmitted
+- **Network → Subnet Calculator, Network → CIDR Tools:** calculated entirely in your browser
+- **Email → Header Analyzer, Email → Builder:** parsed/built entirely in your browser
+- **Utils → Base64, URL Encode, JWT Decoder, Hash, Epoch, Cron, Chmod, JSON, Base Convert, Regex:** encoded/decoded/computed entirely in your browser
 
 ### Privacy notice on the page
 
-Add a short privacy line in the footer, visible on every tab:
+Short privacy line in the footer, visible on every tab:
 
 ```html
 <footer>
-  No logs. No tracking. No ads. 
+  No logs. No tracking. No ads.
   Queries are not stored or recorded.
-  <a href="/privacy">Privacy</a> · 
-  Open source · <a href="https://github.com/YOUR_GITHUB/sysadminstuff">GitHub</a>
+  <a href="/privacy">Privacy</a> ·
+  Source available · <a href="https://github.com/CinderHillsDev/sysadminstuff">GitHub</a>
 </footer>
 ```
 
-### PRIVACY.md — add to repo root
+### PRIVACY.md — repo root
 
-Plain English, no legal boilerplate. Cover:
+Plain English, no legal boilerplate. Covers:
 - What data we collect: nothing. Queries are not logged or stored.
-- Cloudflare: as the hosting provider, Cloudflare may collect standard infrastructure metrics (request counts, error rates) but we do not have access to query content and do not enable Cloudflare analytics.
-- Google Fonts: loading JetBrains Mono from Google Fonts means Google sees a font request from your browser. To avoid this entirely, the font can be self-hosted (instructions in README).
-- Third-party APIs: queries are sent to public APIs (Cloudflare DoH, crt.sh, ip-api.com, etc.) to perform lookups — this is inherent to how the tools work. These services have their own privacy policies.
+- Cloudflare: as the hosting provider, Cloudflare may collect standard infrastructure metrics (request counts, error rates) but we do not have access to query content and do not enable Cloudflare Web Analytics.
+- Fonts: self-hosted, so no font request ever reaches a third party.
+- Third-party APIs: queries are sent to public APIs (Cloudflare DoH, RDAP registries, ipwho.is, bgpview.io, AWS published IP ranges, Microsoft public endpoints) to perform lookups — this is inherent to how the tools work. These services have their own privacy policies. We do not forward the caller's IP to them where it can be avoided.
 - No cookies, no localStorage for personal data, no tracking of any kind.
 - Contact: link to GitHub issues for questions.
 
 ### README — privacy section
 
-Add a dedicated Privacy section to README.md:
+Dedicated Privacy section in README.md:
 - "sysadminstuff.net does not log, store, or track queries."
 - "No analytics. No cookies. No ads."
-- "Utility tools (JWT decoder, Base64, URL encode, Subnet calculator) run entirely in your browser and never transmit data."
+- "The fully client-side tools (Subnet Calculator, Cert Decode PEM/CSR, Password/Passphrase/UUID, and everything under Utils) run entirely in your browser and never transmit data."
 - Link to PRIVACY.md for full details.

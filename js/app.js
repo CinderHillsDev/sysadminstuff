@@ -1,10 +1,10 @@
 // app.js — tab routing, input handling, shared utils
 
 // ---- Which tabs use the shared input bar (Utils does not) ----
-const SHARED_INPUT_TABS = new Set(['dns', 'email', 'web', 'network', 'cert', 'whois', 'm365', 'cloud']);
+const SHARED_INPUT_TABS = new Set(['dns', 'email', 'web', 'network', 'whois', 'm365', 'cloud']);
 
 // Subtabs that live under a shared-input tab but are self-contained (need no query).
-const NO_QUERY_SUBTABS = new Set(['email:headers', 'email:builder', 'network:subnet', 'network:cidr', 'cloud:arn', 'cert:decode']);
+const NO_QUERY_SUBTABS = new Set(['email:headers', 'email:builder', 'network:subnet', 'network:cidr', 'cloud:arn']);
 
 // Default subtab per tab (matches the .active markup in index.html)
 const DEFAULT_SUBTAB = {
@@ -12,7 +12,7 @@ const DEFAULT_SUBTAB = {
   email: 'spf',
   web: 'httpheaders',
   network: 'asn',
-  cert: 'lookup',
+  cert: 'main',
   whois: 'main',
   myip: 'main',
   m365: 'main',

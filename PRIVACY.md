@@ -29,7 +29,6 @@ Some tools send your query to public APIs to perform lookups:
 
 - Cloudflare DNS-over-HTTPS (DNS lookups, blacklist checks)
 - Public DNS resolvers for propagation checks (from your browser): Cloudflare, Google, DNS.SB
-- crt.sh (certificates)
 - RDAP registries (whois)
 - ipwho.is (geolocation)
 - bgpview.io (ASN data)

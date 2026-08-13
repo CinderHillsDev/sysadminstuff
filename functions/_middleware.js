@@ -1,7 +1,7 @@
 // functions/_middleware.js — cheap, stateless hardening that runs before every
-// API handler. Several endpoints proxy third-party services (crt.sh, bgpview,
-// Spamhaus, Microsoft), so we don't want people driving them directly with curl
-// or scripts and getting our IP rate-limited or banned. This shrinks the abuse
+// API handler. Several endpoints proxy third-party services (bgpview, Spamhaus,
+// Microsoft), so we don't want people driving them directly with curl or
+// scripts and getting our IP rate-limited or banned. This shrinks the abuse
 // surface; volume abuse still needs a Cloudflare Rate Limiting rule (see README).
 //
 // No user input is logged.
@@ -19,9 +19,8 @@ const ALLOWED_FETCH_SITE = new Set(['same-origin', 'same-site']);
 
 // Edge-cache successful GET responses per endpoint, so repeated lookups of the
 // same domain/IP are served from Cloudflare's cache and never re-hit the
-// upstream (crt.sh, bgpview, RDAP, Microsoft, …). Seconds. 0/absent = no cache.
+// upstream (bgpview, RDAP, Microsoft, …). Seconds. 0/absent = no cache.
 const CACHE_TTL = {
-  '/api/crtsh': 3600,
   '/api/asn': 3600,
   '/api/whois': 3600,
   '/api/tenant': 3600,
