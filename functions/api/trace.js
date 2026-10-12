@@ -98,9 +98,9 @@ async function resolveNsAddr(host) {
 }
 
 // Last resort when no server for a zone can be queried directly from the edge
-// (some operators' anycast ranges are unreachable from Workers): ask a public
-// recursive resolver for the final answer and label the hop clearly as such.
-async function dohFallback(name, type) {
+// (some operators' anycast ranges are unreachable from Workers): rebuild the rest
+// of the chain from a public recursive resolver and label every hop as such.
+async function dohQ(name, type) {
   try {
     const t0 = Date.now();
     const res = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`, {
@@ -110,14 +110,47 @@ async function dohFallback(name, type) {
     if (!res.ok) return null;
     const data = await res.json();
     if (typeof data.Status !== 'number') return null;
+    const from = /Response from ([0-9a-f.:]+)/i.exec(data.Comment || '');
     return {
       ms: Date.now() - t0,
       rcode: data.Status,
+      from: from ? from[1].replace(/\.$/, '') : '',
       answers: (data.Answer || []).map((a) => ({ name: a.name, type: typeName(a.type), ttl: a.TTL, data: a.data })),
     };
   } catch (e) {
     return null;
   }
+}
+
+// Names strictly below `zone` down to `qname` (e.g. gov. + a.b.gov -> b.gov, a.b.gov).
+function namesBelow(zone, qname) {
+  const labels = qname.toLowerCase().replace(/\.$/, '').split('.');
+  const depth = zone === '.' ? 0 : zone.replace(/\.$/, '').split('.').length;
+  const out = [];
+  for (let i = labels.length - depth - 1; i >= 0; i--) out.push(labels.slice(i).join('.'));
+  return out;
+}
+
+async function resolverFallback(zone, qname, type, failures) {
+  const cuts = await Promise.all(namesBelow(zone, qname).map((n) => dohQ(n, 'NS').then((r) => ({ n, r }))));
+  const hops = [];
+  let parent = zone;
+  const mk = (r, extra) => ({
+    zone: parent, qname, server: { name: 'dns.google (public resolver)', ip: r.from }, via: 'resolver',
+    ms: r.ms, bytes: 0, rcode: r.rcode, aa: false, skipped: [], ...extra,
+  });
+  for (const { n, r } of cuts) {
+    const ns = r ? r.answers.filter((a) => a.type === 'NS' && a.name.toLowerCase() === n + '.') : [];
+    if (!ns.length) continue; // not a zone cut (or lookup failed)
+    hops.push(mk(r, { answers: [], authority: ns }));
+    parent = n + '.';
+  }
+  const fin = await dohQ(qname, type);
+  if (!fin) return null;
+  hops.push(mk(fin, { answers: fin.answers, authority: [] }));
+  hops[0].skipped = failures;
+  hops[0].note = `The ${zone} nameservers could not be queried directly from our edge, so the rest of the chain was reconstructed from a public resolver (NS lookups for each zone cut, then the answer).`;
+  return hops;
 }
 
 export async function onRequest(context) {
@@ -161,17 +194,12 @@ export async function onRequest(context) {
       }
     }
     if (!result) {
-      const doh = await dohFallback(qname, type);
-      if (!doh) {
+      const rest = await resolverFallback(zone, qname, type, failures);
+      if (!rest) {
         error = `No server for ${zone} answered (${failures.join('; ') || 'no usable servers'}).`;
         break;
       }
-      hops.push({
-        zone, qname, server: { name: 'dns.google (public resolver)', ip: '' }, via: 'resolver',
-        ms: doh.ms, bytes: 0, rcode: doh.rcode, aa: false,
-        answers: doh.answers, authority: [], skipped: failures,
-        note: `The ${zone} nameservers could not be queried directly from our edge, so the remaining delegation was resolved by a public resolver instead.`,
-      });
+      hops.push(...rest);
       done = true;
       break;
     }

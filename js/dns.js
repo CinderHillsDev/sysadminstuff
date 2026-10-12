@@ -229,7 +229,7 @@ function traceText(data) {
     lines.push('');
     (h.answers.length ? h.answers : h.authority).forEach((r) => lines.push(fmtRR(r)));
     lines.push(h.via === 'resolver'
-      ? `;; Answer from ${h.server.name} in ${h.ms} ms [recursive fallback — direct query failed]`
+      ? `;; Via ${h.server.name}${h.server.ip ? ` (upstream ${h.server.ip})` : ''} in ${h.ms} ms [resolver fallback — direct query failed]`
       : `;; Received ${h.bytes} bytes from ${h.server.ip}#53(${h.server.name}) in ${h.ms} ms` +
         ` [${h.aa ? 'authoritative' : 'referral'}${h.rcode === 3 ? ', NXDOMAIN' : ''}]`);
   });
@@ -251,7 +251,7 @@ async function runDNSTrace(query, panel) {
       const label = h.via === 'resolver' ? '<span class="badge yellow">resolver fallback</span>' : h.aa ? '<span class="badge green">authoritative</span>' : '<span class="badge grey">referral</span>';
       const body =
         `<table><tbody>` +
-        `<tr><td>Server</td><td><strong>${e(h.server.name)}</strong>${h.server.ip ? ` (${e(h.server.ip)})` : ''} ${label}</td></tr>` +
+        `<tr><td>Server</td><td><strong>${e(h.server.name)}</strong>${h.server.ip ? ` (${h.via === 'resolver' ? 'upstream ' : ''}${e(h.server.ip)})` : ''} ${label}</td></tr>` +
         `<tr><td>Asked for</td><td>${e(h.qname)} ${e(data.type)} (zone ${e(h.zone)})</td></tr>` +
         `<tr><td>Response</td><td>${h.rcode === 3 ? 'NXDOMAIN' : 'NOERROR'}${h.bytes ? ` · ${h.bytes} bytes` : ''} · ${h.ms} ms</td></tr>` +
         (h.note ? `<tr><td>Note</td><td>${e(h.note)}</td></tr>` : '') +
