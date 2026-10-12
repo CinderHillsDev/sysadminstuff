@@ -228,8 +228,10 @@ function traceText(data) {
   data.hops.forEach((h) => {
     lines.push('');
     (h.answers.length ? h.answers : h.authority).forEach((r) => lines.push(fmtRR(r)));
-    lines.push(`;; Received ${h.bytes} bytes from ${h.server.ip}#53(${h.server.name}) in ${h.ms} ms` +
-      ` [${h.aa ? 'authoritative' : 'referral'}${h.rcode === 3 ? ', NXDOMAIN' : ''}]`);
+    lines.push(h.via === 'resolver'
+      ? `;; Answer from ${h.server.name} in ${h.ms} ms [recursive fallback — direct query failed]`
+      : `;; Received ${h.bytes} bytes from ${h.server.ip}#53(${h.server.name}) in ${h.ms} ms` +
+        ` [${h.aa ? 'authoritative' : 'referral'}${h.rcode === 3 ? ', NXDOMAIN' : ''}]`);
   });
   return lines.join('\n');
 }
@@ -246,12 +248,13 @@ async function runDNSTrace(query, panel) {
     const e = window.escapeHtml;
     const hops = data.hops.map((h, i) => {
       const rrs = h.answers.length ? h.answers : h.authority;
-      const label = h.aa ? '<span class="badge green">authoritative</span>' : '<span class="badge grey">referral</span>';
+      const label = h.via === 'resolver' ? '<span class="badge yellow">resolver fallback</span>' : h.aa ? '<span class="badge green">authoritative</span>' : '<span class="badge grey">referral</span>';
       const body =
         `<table><tbody>` +
-        `<tr><td>Server</td><td><strong>${e(h.server.name)}</strong> (${e(h.server.ip)}) ${label}</td></tr>` +
+        `<tr><td>Server</td><td><strong>${e(h.server.name)}</strong>${h.server.ip ? ` (${e(h.server.ip)})` : ''} ${label}</td></tr>` +
         `<tr><td>Asked for</td><td>${e(h.qname)} ${e(data.type)} (zone ${e(h.zone)})</td></tr>` +
-        `<tr><td>Response</td><td>${h.rcode === 3 ? 'NXDOMAIN' : 'NOERROR'} · ${h.bytes} bytes · ${h.ms} ms</td></tr>` +
+        `<tr><td>Response</td><td>${h.rcode === 3 ? 'NXDOMAIN' : 'NOERROR'}${h.bytes ? ` · ${h.bytes} bytes` : ''} · ${h.ms} ms</td></tr>` +
+        (h.note ? `<tr><td>Note</td><td>${e(h.note)}</td></tr>` : '') +
         (h.skipped.length ? `<tr><td>Skipped</td><td>${h.skipped.map(e).join('<br>')}</td></tr>` : '') +
         `</tbody></table>` +
         (rrs.length ? `<pre class="raw">${rrs.map((r) => e(fmtRR(r))).join('\n')}</pre>` : '');
@@ -261,9 +264,10 @@ async function runDNSTrace(query, panel) {
     if (data.final && data.final.rcode === 3) {
       summary = `<div class="summary yellow">NXDOMAIN — ${e(data.name)} does not exist (per ${e(data.final.server.name)}).</div>`;
     } else if (data.final && data.final.answers.length) {
-      summary = `<div class="summary green">✓ Answered by <strong>${e(data.final.server.name)}</strong> (${e(data.final.server.ip)}) after ${data.hops.length} hops.</div>`;
+      const fs = data.final.server;
+      summary = `<div class="summary green">✓ Answered by <strong>${e(fs.name)}</strong>${fs.ip ? ` (${e(fs.ip)})` : ''} after ${data.hops.length} hops.</div>`;
     } else if (data.final) {
-      summary = `<div class="summary grey">No ${e(data.type)} records — final server ${e(data.final.server.name)} (${e(data.final.server.ip)}) returned an empty answer.</div>`;
+      summary = `<div class="summary grey">No ${e(data.type)} records — final server ${e(data.final.server.name)}${data.final.server.ip ? ` (${e(data.final.server.ip)})` : ''} returned an empty answer.</div>`;
     } else {
       summary = `<div class="summary yellow">⚠ ${e(data.error || 'Trace incomplete.')}</div>`;
     }

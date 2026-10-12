@@ -10,7 +10,7 @@
 
 import { connect } from 'cloudflare:sockets';
 import { isBlockedHost } from '../../lib/parse.mjs';
-import { TYPE_CODES, buildQuery, parseMessage, inZone } from '../../lib/dnswire.mjs';
+import { TYPE_CODES, buildQuery, parseMessage, inZone, typeName } from '../../lib/dnswire.mjs';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -97,6 +97,29 @@ async function resolveNsAddr(host) {
   }
 }
 
+// Last resort when no server for a zone can be queried directly from the edge
+// (some operators' anycast ranges are unreachable from Workers): ask a public
+// recursive resolver for the final answer and label the hop clearly as such.
+async function dohFallback(name, type) {
+  try {
+    const t0 = Date.now();
+    const res = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`, {
+      headers: { Accept: 'application/dns-json' },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (typeof data.Status !== 'number') return null;
+    return {
+      ms: Date.now() - t0,
+      rcode: data.Status,
+      answers: (data.Answer || []).map((a) => ({ name: a.name, type: typeName(a.type), ttl: a.TTL, data: a.data })),
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
 export async function onRequest(context) {
   const { request } = context;
   if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
@@ -138,7 +161,18 @@ export async function onRequest(context) {
       }
     }
     if (!result) {
-      error = `No server for ${zone} answered (${failures.join('; ') || 'no usable servers'}).`;
+      const doh = await dohFallback(qname, type);
+      if (!doh) {
+        error = `No server for ${zone} answered (${failures.join('; ') || 'no usable servers'}).`;
+        break;
+      }
+      hops.push({
+        zone, qname, server: { name: 'dns.google (public resolver)', ip: '' }, via: 'resolver',
+        ms: doh.ms, bytes: 0, rcode: doh.rcode, aa: false,
+        answers: doh.answers, authority: [], skipped: failures,
+        note: `The ${zone} nameservers could not be queried directly from our edge, so the remaining delegation was resolved by a public resolver instead.`,
+      });
+      done = true;
       break;
     }
 
