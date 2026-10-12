@@ -477,6 +477,33 @@ async function runTests() {
   // every resolver key the propagation tool passes must resolve to an endpoint
   ['cloudflare', 'google', 'dnssb'].forEach((k) => check(`dns resolver ${k}`, !!dns.RESOLVERS[k]));
 
+  // ---- dns wire format (trace) ----
+  const wire = await import('../lib/dnswire.mjs');
+  const q = wire.buildQuery('example.com', 'A', 0xabcd);
+  eq('wire query length prefix', (q[0] << 8) | q[1], q.length - 2);
+  eq('wire query id', [q[2], q[3]], [0xab, 0xcd]);
+  eq('wire query RD=0', [q[4], q[5]], [0, 0]);
+  eq('wire query qname', Array.from(q.subarray(14, 27)), [7, ...Buffer.from('example'), 3, ...Buffer.from('com'), 0]);
+  // referral: NS example.com -> ns1.example.com with glue A 192.0.2.1, using a compression pointer
+  const ref = Uint8Array.from([
+    0x12, 0x34, 0x80, 0x00, 0, 1, 0, 0, 0, 1, 0, 1,
+    7, ...Buffer.from('example'), 3, ...Buffer.from('com'), 0, 0, 1, 0, 1,     // question @12
+    0xc0, 12, 0, 2, 0, 1, 0, 0, 0x0e, 0x10, 0, 6, 3, ...Buffer.from('ns1'), 0xc0, 12, // NS
+    0xc0, 12 + 0, 0, 1, 0, 1, 0, 0, 0x0e, 0x10, 0, 4, 192, 0, 2, 1,
+  ]);
+  // fix glue owner to point at ns1 (offset of ns1 label)
+  const ns1Off = 12 + 13 + 4 + 2 + 8 + 2; // question end + NS owner ptr/type/class/ttl/rdlen
+  ref[ref.length - 16] = 0xc0; ref[ref.length - 15] = ns1Off;
+  const pm = wire.parseMessage(ref);
+  eq('wire parse authority', pm.authority.map((r) => [r.name, r.type, r.data]), [['example.com.', 'NS', 'ns1.example.com.']]);
+  eq('wire parse glue', pm.additional.map((r) => [r.name, r.type, r.data]), [['ns1.example.com.', 'A', '192.0.2.1']]);
+  check('wire parse not aa', pm.aa === false && pm.rcode === 0);
+  eq('wire ipv6 format', wire.formatIPv6(Uint8Array.from([0x20, 1, 0xd, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])), '2001:db8::1');
+  check('wire rejects pointer loop', (() => { try { wire.parseMessage(Uint8Array.from([0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0xc0, 12, 0, 1, 0, 1])); return false; } catch (e) { return true; } })());
+  check('wire inZone child', wire.inZone('www.example.com', 'example.com.'));
+  check('wire inZone sibling', !wire.inZone('example.org', 'example.com.'));
+  check('wire inZone root', wire.inZone('example.org', '.'));
+
   // ---- report ----
   const total = passed + failures.length;
   if (failures.length) {

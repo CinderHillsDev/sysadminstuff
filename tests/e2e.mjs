@@ -197,6 +197,22 @@ async function main() {
     ok('dns rejects malformed name 400', status === 400);
   }
 
+  // trace — iterative root→authoritative walk over TCP/53
+  {
+    const { status, json } = await getJson('/api/trace?name=cloudflare.com&type=A');
+    okUpstream('trace 200', status, status === 200, `status ${status}`);
+    okUpstream('trace walks root→TLD→auth', status, json && json.hops && json.hops.length >= 3 && json.hops[0].zone === '.');
+    okUpstream('trace final answer + server', status, json && json.final && json.final.server && json.final.answers.length > 0);
+  }
+  {
+    const { status } = await getJson('/api/trace?name=a%20b.com&type=A');
+    ok('trace rejects malformed name 400', status === 400);
+  }
+  {
+    const { status } = await getJson('/api/trace?name=example.com&type=BOGUS');
+    ok('trace rejects bad type 400', status === 400);
+  }
+
   // headers — fetch a live site
   {
     const { status, json } = await getJson('/api/headers?url=https://example.com');

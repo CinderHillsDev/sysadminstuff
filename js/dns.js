@@ -237,6 +237,61 @@ async function runDNSSEC(query, panel) {
   }
 }
 
+// ---------- Trace (dig +trace) ----------
+const fmtRR = (r) => `${r.name.padEnd(24)} ${String(r.ttl).padEnd(7)} IN ${r.type.padEnd(6)} ${r.data}`;
+
+function traceText(data) {
+  const lines = [`; <<>> sysadminstuff trace <<>> ${data.name} ${data.type}`];
+  data.hops.forEach((h) => {
+    lines.push('');
+    (h.answers.length ? h.answers : h.authority).forEach((r) => lines.push(fmtRR(r)));
+    lines.push(`;; Received ${h.bytes} bytes from ${h.server.ip}#53(${h.server.name}) in ${h.ms} ms` +
+      ` [${h.aa ? 'authoritative' : 'referral'}${h.rcode === 3 ? ', NXDOMAIN' : ''}]`);
+  });
+  return lines.join('\n');
+}
+
+async function runDNSTrace(query, panel) {
+  const name = window.hostFromInput(query);
+  const type = window.isIP(query) ? 'PTR' : (dnsSelectedType === 'ALL' ? 'A' : dnsSelectedType);
+  const lookupName = type === 'PTR' ? reverseInAddr(query) : name;
+  window.showLoading(panel, `Tracing ${type} for ${name} from the root servers…`);
+  try {
+    const res = await fetch(`/api/trace?name=${encodeURIComponent(lookupName)}&type=${encodeURIComponent(type)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Trace failed (${res.status})`);
+    const e = window.escapeHtml;
+    const hops = data.hops.map((h, i) => {
+      const rrs = h.answers.length ? h.answers : h.authority;
+      const label = h.aa ? '<span class="badge green">authoritative</span>' : '<span class="badge grey">referral</span>';
+      const body =
+        `<table><tbody>` +
+        `<tr><td>Server</td><td><strong>${e(h.server.name)}</strong> (${e(h.server.ip)}) ${label}</td></tr>` +
+        `<tr><td>Asked for</td><td>${e(h.qname)} ${e(data.type)} (zone ${e(h.zone)})</td></tr>` +
+        `<tr><td>Response</td><td>${h.rcode === 3 ? 'NXDOMAIN' : 'NOERROR'} · ${h.bytes} bytes · ${h.ms} ms</td></tr>` +
+        (h.skipped.length ? `<tr><td>Skipped</td><td>${h.skipped.map(e).join('<br>')}</td></tr>` : '') +
+        `</tbody></table>` +
+        (rrs.length ? `<pre class="raw">${rrs.map((r) => e(fmtRR(r))).join('\n')}</pre>` : '');
+      return window.card(`${i + 1}. ${h.zone === '.' ? 'Root' : h.zone}`, body);
+    }).join('');
+    let summary;
+    if (data.final && data.final.rcode === 3) {
+      summary = `<div class="summary yellow">NXDOMAIN — ${e(data.name)} does not exist (per ${e(data.final.server.name)}).</div>`;
+    } else if (data.final && data.final.answers.length) {
+      summary = `<div class="summary green">✓ Answered by <strong>${e(data.final.server.name)}</strong> (${e(data.final.server.ip)}) after ${data.hops.length} hops.</div>`;
+    } else if (data.final) {
+      summary = `<div class="summary grey">No ${e(data.type)} records — final server ${e(data.final.server.name)} (${e(data.final.server.ip)}) returned an empty answer.</div>`;
+    } else {
+      summary = `<div class="summary yellow">⚠ ${e(data.error || 'Trace incomplete.')}</div>`;
+    }
+    const copy = window.card('dig +trace output', `<pre class="raw">${e(traceText(data))}</pre>`, traceText(data));
+    window.showResult(panel, summary + hops + copy);
+  } catch (err) {
+    window.showError(panel, `Trace failed. ${err.message || ''}`.trim());
+  }
+}
+
+window.registerRunner('dns', 'trace', runDNSTrace);
 window.registerRunner('dns', 'lookup', runDNSLookup);
 window.registerRunner('dns', 'propagation', runDNSPropagation);
 window.registerRunner('dns', 'caa', runCAA);
