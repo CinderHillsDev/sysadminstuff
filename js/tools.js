@@ -52,6 +52,17 @@ function runGen(query, panel) {
   if (panel.dataset.wired) return;
   panel.innerHTML = `
     <div class="privacy-note">Generated in your browser with a cryptographic RNG. Never transmitted.</div>
+    <div class="card"><h3>Passphrase</h3>
+      <div class="btn-row">
+        <label class="field-label" style="margin:0">Words <input type="number" id="pp-count" class="text-input" value="5" min="3" max="12" style="width:5rem"></label>
+        <label class="field-label" style="margin:0">Separator <input type="text" id="pp-sep" class="text-input" value="-" maxlength="3" style="width:4rem"></label>
+        <label><input type="checkbox" id="pp-cap" checked> Capitalize</label>
+        <label><input type="checkbox" id="pp-num" checked> add a number</label>
+        <label><input type="checkbox" id="pp-sym" checked> add a symbol</label>
+        <button class="btn primary" id="pp-go">Generate</button>
+      </div>
+      <div class="result" id="pp-out"></div>
+    </div>
     <div class="card"><h3>Random password</h3>
       <div class="btn-row">
         <label class="field-label" style="margin:0">Length <input type="number" id="pw-len" class="text-input" value="20" min="4" max="128" style="width:5rem"></label>
@@ -63,17 +74,6 @@ function runGen(query, panel) {
         <button class="btn primary" id="pw-go">Generate</button>
       </div>
       <div class="result" id="pw-out"></div>
-    </div>
-    <div class="card"><h3>Passphrase</h3>
-      <div class="btn-row">
-        <label class="field-label" style="margin:0">Words <input type="number" id="pp-count" class="text-input" value="5" min="3" max="12" style="width:5rem"></label>
-        <label class="field-label" style="margin:0">Separator <input type="text" id="pp-sep" class="text-input" value="-" maxlength="3" style="width:4rem"></label>
-        <label><input type="checkbox" id="pp-cap" checked> Capitalize</label>
-        <label><input type="checkbox" id="pp-num" checked> add a number</label>
-        <label><input type="checkbox" id="pp-sym" checked> add a symbol</label>
-        <button class="btn primary" id="pp-go">Generate</button>
-      </div>
-      <div class="result" id="pp-out"></div>
     </div>
     <div class="card"><h3>UUID</h3>
       <div class="btn-row"><button class="btn primary" id="uuid-go">Generate UUID v4</button></div>
@@ -130,7 +130,7 @@ function runGen(query, panel) {
     uo.innerHTML = window.card('', `<pre class="raw">${u}</pre>`, u);
     wire(uo);
   });
-  genPw(); genPp();
+  genPp(); genPw();
   panel.dataset.wired = '1';
 }
 
