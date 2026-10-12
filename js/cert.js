@@ -68,4 +68,38 @@ function runDecode(query, panel) {
   panel.dataset.wired = '1';
 }
 
+// ---------- CAA ----------
+// Per RFC 8659 a CA climbs from the name to its parents until it finds a CAA set,
+// so we do the same rather than only checking the exact name.
+async function runCAA(query, panel) {
+  const domain = window.hostFromInput(query);
+  window.showLoading(panel, 'Looking up CAA…');
+  try {
+    let records = [];
+    let foundAt = '';
+    for (const name of window.caaCandidates(domain)) {
+      const data = await window.dohQuery(name, 'CAA');
+      records = (data.Answer || []).filter((a) => a.type === 257)
+        .map((a) => window.parseCaaRdata(a.data)).filter(Boolean);
+      if (records.length) { foundAt = name; break; }
+    }
+    if (!records.length) {
+      panel.innerHTML = `<div class="summary yellow">No CAA records for ${window.escapeHtml(domain)} or its parent domains — <strong>any</strong> CA may issue certificates. Add a CAA record to restrict this.</div>`;
+      return;
+    }
+    const issuers = records.filter((r) => r.tag === 'issue' || r.tag === 'issuewild').map((r) => r.value || '(none — issuance forbidden)');
+    const inherited = foundAt !== domain.toLowerCase().replace(/\.$/, '')
+      ? ` <span class="muted">(inherited from ${window.escapeHtml(foundAt)} — ${window.escapeHtml(domain)} has no CAA of its own)</span>` : '';
+    const rows = records.map((r) =>
+      `<tr><td>${r.flags}</td><td><span class="badge ${r.tag.startsWith('issue') ? 'green' : 'grey'}">${window.escapeHtml(r.tag)}</span></td><td>${window.escapeHtml(r.value || '—')}</td></tr>`
+    ).join('');
+    panel.innerHTML =
+      `<div class="summary green">Certificate issuance restricted to: ${window.escapeHtml([...new Set(issuers)].join(', ') || 'see below')}.${inherited}</div>` +
+      window.card(`CAA records — ${foundAt}`, `<table><thead><tr><th>Flags</th><th>Tag</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>`);
+  } catch (e) {
+    window.showError(panel, `Could not reach the DNS resolver. ${e.message || ''}`.trim());
+  }
+}
+
 window.registerRunner('cert', 'main', runDecode);
+window.registerRunner('cert', 'caa', runCAA);

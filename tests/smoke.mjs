@@ -477,6 +477,11 @@ async function runTests() {
   // every resolver key the propagation tool passes must resolve to an endpoint
   ['cloudflare', 'google', 'dnssb'].forEach((k) => check(`dns resolver ${k}`, !!dns.RESOLVERS[k]));
 
+  // ---- CAA parent climb (RFC 8659) ----
+  eq('caaCandidates climbs', core.caaCandidates('www.a.example.com'), ['www.a.example.com', 'a.example.com', 'example.com']);
+  eq('caaCandidates apex', core.caaCandidates('example.com'), ['example.com']);
+  eq('caaCandidates trailing dot/case', core.caaCandidates('WWW.Example.com.'), ['www.example.com', 'example.com']);
+
   // ---- dns wire format (trace) ----
   const wire = await import('../lib/dnswire.mjs');
   const q = wire.buildQuery('example.com', 'A', 0xabcd);

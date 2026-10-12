@@ -1,7 +1,7 @@
 // dns.js — DNS Lookup + Propagation
 
-const DNS_TYPES = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV'];
-const TYPE_NUM = { 1: 'A', 2: 'NS', 5: 'CNAME', 6: 'SOA', 12: 'PTR', 15: 'MX', 16: 'TXT', 28: 'AAAA', 33: 'SRV' };
+const DNS_TYPES = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV', 'CAA'];
+const TYPE_NUM = { 1: 'A', 2: 'NS', 5: 'CNAME', 6: 'SOA', 12: 'PTR', 15: 'MX', 16: 'TXT', 28: 'AAAA', 33: 'SRV', 257: 'CAA' };
 
 let dnsSelectedType = 'A';
 
@@ -100,7 +100,14 @@ function unquoteTxt(v) {
 }
 
 function recordCard(type, rows) {
-  const val = (r) => (type === 'TXT' ? unquoteTxt(String(r.data)) : r.data);
+  const val = (r) => {
+    if (type === 'TXT') return unquoteTxt(String(r.data));
+    if (type === 'CAA') { // some resolvers return RFC 3597 hex; show the readable form
+      const c = window.parseCaaRdata(r.data);
+      return c ? `${c.flags} ${c.tag} "${c.value}"` : r.data;
+    }
+    return r.data;
+  };
   const body = '<table><thead><tr><th>Name</th><th>TTL</th><th>Type</th><th>Data</th></tr></thead><tbody>' +
     rows.map((r) =>
       `<tr><td>${window.escapeHtml(r.name)}</td><td>${r.TTL}</td><td>${type}</td>` +
@@ -184,30 +191,6 @@ async function doPropagation(query, panel, type) {
 
   const table = `<table><thead><tr><th>Resolver</th><th>Answer</th><th>TTL</th><th>Status</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
   out.innerHTML = summary + window.card(`${type} propagation`, table);
-}
-
-// ---------- CAA ----------
-async function runCAA(query, panel) {
-  const domain = window.hostFromInput(query);
-  window.showLoading(panel, 'Looking up CAA…');
-  try {
-    const data = await window.dohQuery(domain, 'CAA');
-    const records = (data.Answer || []).filter((a) => a.type === 257)
-      .map((a) => window.parseCaaRdata(a.data)).filter(Boolean);
-    if (!records.length) {
-      panel.innerHTML = `<div class="summary yellow">No CAA records for ${window.escapeHtml(domain)} — <strong>any</strong> CA may issue certificates. Add a CAA record to restrict this.</div>`;
-      return;
-    }
-    const issuers = records.filter((r) => r.tag === 'issue' || r.tag === 'issuewild').map((r) => r.value || '(none — issuance forbidden)');
-    const rows = records.map((r) =>
-      `<tr><td>${r.flags}</td><td><span class="badge ${r.tag.startsWith('issue') ? 'green' : 'grey'}">${window.escapeHtml(r.tag)}</span></td><td>${window.escapeHtml(r.value || '—')}</td></tr>`
-    ).join('');
-    panel.innerHTML =
-      `<div class="summary green">Certificate issuance restricted to: ${window.escapeHtml([...new Set(issuers)].join(', ') || 'see below')}.</div>` +
-      window.card('CAA records', `<table><thead><tr><th>Flags</th><th>Tag</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>`);
-  } catch (e) {
-    window.showError(panel, `Could not reach the DNS resolver. ${e.message || ''}`.trim());
-  }
 }
 
 // ---------- DNSSEC ----------
@@ -294,5 +277,4 @@ async function runDNSTrace(query, panel) {
 window.registerRunner('dns', 'trace', runDNSTrace);
 window.registerRunner('dns', 'lookup', runDNSLookup);
 window.registerRunner('dns', 'propagation', runDNSPropagation);
-window.registerRunner('dns', 'caa', runCAA);
 window.registerRunner('dns', 'dnssec', runDNSSEC);

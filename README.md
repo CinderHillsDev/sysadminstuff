@@ -12,9 +12,8 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 ## Features
 
 ### DNS
-- **Lookup** — A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, or ALL, via Cloudflare DNS-over-HTTPS. IP input auto-switches to reverse (PTR).
+- **Lookup** — A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, CAA, or ALL, via Cloudflare DNS-over-HTTPS. IP input auto-switches to reverse (PTR).
 - **Propagation** — the same record across Cloudflare, Google, and DNS.SB, with a consistency verdict. Runs entirely in your browser (these are the public resolvers that expose a browser-usable JSON + CORS DoH API).
-- **CAA** — which CAs may issue certificates for a domain (RFC3597-parsed). 
 - **DNSSEC** — signed/unsigned status from the AD flag + DS/DNSKEY presence.
 
 ### Email

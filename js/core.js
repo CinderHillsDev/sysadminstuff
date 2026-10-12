@@ -746,6 +746,15 @@
     return null;
   }
 
+  // RFC 8659 §3: a CA checks the name, then each parent, until it finds a CAA
+  // RRset. Returns the names to query, most specific first; stops before the TLD.
+  function caaCandidates(name) {
+    const labels = String(name || '').trim().toLowerCase().replace(/\.$/, '').split('.').filter(Boolean);
+    const out = [];
+    for (let i = 0; i < labels.length - 1 || (i === 0 && labels.length === 1); i++) out.push(labels.slice(i).join('.'));
+    return out;
+  }
+
   // ---------- Cloud helpers ----------
   // Provider fingerprint from a hostname (CNAME / MX / NS targets).
   const PROVIDER_PATTERNS = [
@@ -810,7 +819,7 @@
   }
   const api = {
     isIPv4, isIPv6, isIP, isDomain, isCIDR, isASN, isURL, normalizeURL, isPrivateIP,
-    matchProvider, classifyCloudOrg, parseArn, parseCaaRdata,
+    matchProvider, classifyCloudOrg, parseArn, parseCaaRdata, caaCandidates,
     parseCertificate, parseCsr,
     buildSpf, buildDmarc, cidrContains, splitCidr,
     ipToInt, intToIp, maskToBits, subnetInfo, parseCidrInput,

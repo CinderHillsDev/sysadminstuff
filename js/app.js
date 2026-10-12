@@ -1,10 +1,13 @@
 // app.js — tab routing, input handling, shared utils
 
 // ---- Which tabs use the shared input bar (Utils does not) ----
-const SHARED_INPUT_TABS = new Set(['dns', 'email', 'web', 'network', 'whois', 'm365', 'cloud']);
+const SHARED_INPUT_TABS = new Set(['dns', 'email', 'web', 'network', 'whois', 'm365', 'cloud', 'cert']);
 
 // Subtabs that live under a shared-input tab but are self-contained (need no query).
-const NO_QUERY_SUBTABS = new Set(['email:headers', 'email:builder', 'network:subnet', 'network:cidr', 'cloud:arn']);
+const NO_QUERY_SUBTABS = new Set(['email:headers', 'email:builder', 'network:subnet', 'network:cidr', 'cloud:arn', 'cert:main']);
+
+// Subtabs that moved: old bookmarks/URLs keep working.
+const LEGACY_SUBTABS = { 'dns:caa': ['cert', 'caa'] };
 
 // Default subtab per tab (matches the .active markup in index.html)
 const DEFAULT_SUBTAB = {
@@ -246,6 +249,8 @@ function maybeRun(force = false) {
 function activate(tab, sub, { pushUrl = true, force = false } = {}) {
   // Validate against the DOM so a stale/hand-edited URL (?tab=bogus, or a sub
   // that belongs to another tab) can't leave the page blank — fall back instead.
+  const moved = LEGACY_SUBTABS[`${tab}:${sub}`];
+  if (moved) [tab, sub] = moved;
   if (!document.getElementById(`tab-${tab}`)) tab = 'dns';
   sub = sub || DEFAULT_SUBTAB[tab] || '';
   if (!document.getElementById(`panel-${tab}-${sub}`)) sub = DEFAULT_SUBTAB[tab] || sub;
@@ -253,6 +258,8 @@ function activate(tab, sub, { pushUrl = true, force = false } = {}) {
   state.sub = sub;
   setActiveTab(tab);
   setActiveSubtab(tab, sub);
+  // Self-contained subtabs (no query) don't need the shared input bar.
+  if (NO_QUERY_SUBTABS.has(`${tab}:${sub}`)) document.getElementById('input-bar').classList.add('hidden');
   if (pushUrl) setParams(state.q, tab, sub);
   maybeRun(force);
 }
