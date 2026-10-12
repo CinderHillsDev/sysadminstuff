@@ -271,8 +271,10 @@ async function runDNSTrace(query, panel) {
     } else {
       summary = `<div class="summary yellow">⚠ ${e(data.error || 'Trace incomplete.')}</div>`;
     }
+    const digCmd = window.isIP(query) ? `dig +trace -x ${query.trim()}` : `dig +trace ${name} ${type}`;
+    const mine = window.card('Run it yourself', `<pre class="raw">${e(digCmd)}</pre>`, digCmd);
     const copy = window.card('dig +trace output', `<pre class="raw">${e(traceText(data))}</pre>`, traceText(data));
-    window.showResult(panel, summary + hops + copy);
+    window.showResult(panel, summary + mine + hops + copy);
   } catch (err) {
     window.showError(panel, `Trace failed. ${err.message || ''}`.trim());
   }
