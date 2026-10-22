@@ -252,13 +252,13 @@ async function runDNSTrace(query, panel) {
       const k = (t) => `<td style="white-space:nowrap;padding-right:1rem">${t}</td>`;
       const rcode = h.rcode === 0 ? '' : ` · <span class="warn">${['NOERROR', 'FORMERR', 'SERVFAIL', 'NXDOMAIN', 'NOTIMP', 'REFUSED'][h.rcode] || 'rcode ' + h.rcode}</span>`;
       const body =
-        `<table><tbody>` +
+        '<table><tbody>' +
         `<tr>${k('Server')}<td><strong>${e(h.server.name)}</strong>${h.server.ip ? ` (${h.via === 'resolver' ? 'upstream ' : ''}${e(h.server.ip)})` : ''} ${label}</td></tr>` +
         `<tr>${k('Asked for')}<td>${e(h.qname)} ${e(data.type)} (zone ${e(h.zone)})</td></tr>` +
         `<tr>${k('Response')}<td>${h.bytes ? `${h.bytes} bytes · ` : ''}${h.ms} ms${rcode}</td></tr>` +
         (h.note ? `<tr>${k('Note')}<td>${e(h.note)}</td></tr>` : '') +
         (h.skipped.length ? `<tr>${k('Failed')}<td>${h.skipped.map(e).join('<br>')}</td></tr>` : '') +
-        `</tbody></table>` +
+        '</tbody></table>' +
         (rrs.length ? `<pre class="raw">${rrs.map((r) => e(fmtRR(r))).join('\n')}</pre>` : '');
       return window.card(`${i + 1}. ${h.zone === '.' ? 'Root' : h.zone}`, body);
     }).join('');
