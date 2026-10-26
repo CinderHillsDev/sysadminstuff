@@ -240,9 +240,25 @@ async function runTests() {
   const sc = parse.securityScore({ 'Strict-Transport-Security': 'max-age=1', 'x-frame-options': 'DENY', 'content-type': 'text/html' });
   eq('securityScore count', sc.score, 2);
   eq('securityScore total', sc.total, 7);
+  eq('security header list matches core.js', core.SECURITY_HEADER_NAMES, parse.SECURITY_HEADERS);
 
   // ================= lib/parse.mjs: RBL + SSRF guard =================
   eq('rblQuery reverses octets', parse.rblQuery('1.2.3.4', 'zen.spamhaus.org'), '4.3.2.1.zen.spamhaus.org');
+  // A listing code from Spamhaus-family zones is 127.0.0.2-7. Anything else —
+  // above all 127.255.255.254, their "you are a public resolver, go away" — is
+  // NOT a listing; treating it as one blacklisted every site behind a CDN.
+  eq('rbl empty answer is clean', parse.rblVerdict('zen.spamhaus.org', []), { listed: false, response: '', skipped: false });
+  eq('rbl spamhaus listing code', parse.rblVerdict('zen.spamhaus.org', ['127.0.0.2']).listed, true);
+  eq('rbl spamhaus css code listed', parse.rblVerdict('zen.spamhaus.org', ['127.0.0.3']).listed, true);
+  eq('rbl spamhaus refusal not listed', parse.rblVerdict('zen.spamhaus.org', ['127.255.255.254']).listed, false);
+  check('rbl spamhaus refusal marked skipped', parse.rblVerdict('zen.spamhaus.org', ['127.255.255.254']).skipped === true);
+  eq('rbl cbl refusal not listed', parse.rblVerdict('cbl.abuseat.org', ['127.255.255.254']).listed, false);
+  eq('rbl barracuda refusal not listed', parse.rblVerdict('b.barracudacentral.org', ['127.0.0.4']).listed, false);
+  eq('rbl spamhaus xbl code listed', parse.rblVerdict('zen.spamhaus.org', ['127.0.0.5']).listed, true);
+  eq('rbl cbl advisory code not listed', parse.rblVerdict('cbl.abuseat.org', ['127.0.0.8']).listed, false);
+  eq('rbl barracuda listing code', parse.rblVerdict('b.barracudacentral.org', ['127.0.0.2']).listed, true);
+  eq('rbl generic zone answer is listed', parse.rblVerdict('dnsbl.sorbs.net', ['127.0.0.14']).listed, true);
+  eq('rbl generic zone lists response', parse.rblVerdict('bl.mailspike.net', ['127.0.0.2', '127.0.0.10']).response, '127.0.0.2, 127.0.0.10');
   check('ssrf blocks localhost', parse.isBlockedHost('localhost'));
   check('ssrf blocks 127.x', parse.isBlockedHost('127.0.0.1'));
   check('ssrf blocks 10.x', parse.isBlockedHost('10.1.2.3'));
@@ -481,6 +497,131 @@ async function runTests() {
   eq('caaCandidates climbs', core.caaCandidates('www.a.example.com'), ['www.a.example.com', 'a.example.com', 'example.com']);
   eq('caaCandidates apex', core.caaCandidates('example.com'), ['example.com']);
   eq('caaCandidates trailing dot/case', core.caaCandidates('WWW.Example.com.'), ['www.example.com', 'example.com']);
+
+  // ================= core.js: domain report (Overview tab) =================
+  eq('reportDomain strips www', core.reportDomain('WWW.Example.com'), 'example.com');
+  eq('reportDomain keeps a subdomain', core.reportDomain('shop.example.com'), 'shop.example.com');
+  check('daysUntil future is positive', core.daysUntil('2030-01-01 00:00:00', Date.UTC(2026, 0, 1)) > 1000);
+  check('daysUntil past is negative', core.daysUntil('2020-01-01 00:00:00', Date.UTC(2026, 0, 1)) < 0);
+  eq('daysUntil blank is null', core.daysUntil('', 0), null);
+  eq('caaLabel readable form', core.caaLabel('0 issue "letsencrypt.org"'), 'issue "letsencrypt.org"');
+
+  const byId = (rep) => rep.items.reduce((m, i) => { m[i.id] = i; return m; }, {});
+  const NOW = Date.UTC(2026, 0, 1);
+  const healthy = core.domainReport({
+    domain: 'good.example', now: NOW,
+    records: {
+      A: ['192.0.2.1'], AAAA: ['2001:db8::1'], NS: ['ns1.good.example', 'ns2.good.example'],
+      SOA: ['ns1.good.example host.good.example 2024010101 7200 3600 1209600 3600'],
+      MX: [{ prio: 10, host: 'mail.good.example' }], TXT: ['v=spf1 -all'], DS: ['1 13 2 AA'],
+    },
+    ad: true,
+    dmarc: ['v=DMARC1; p=reject; rua=mailto:d@good.example'],
+    dkim: { selector1: ['v=DKIM1; k=rsa; p=MIGfMA0CSqGSIb3DQEBA'] },
+    ptr: { '192.0.2.1': 'mail.good.example', 'mail.good.example': 'mail.good.example' },
+    rbl: { ip: '192.0.2.1', results: [{ list: 'zen.spamhaus.org', listed: false, response: '', skipped: false }] },
+    http: {
+      chain: [
+        { url: 'http://good.example', status: 301, headers: { location: 'https://good.example/' } },
+        { url: 'https://good.example/', status: 200, headers: {
+          'strict-transport-security': 'max-age=31536000; includeSubDomains',
+          'content-security-policy': 'default-src https:', 'x-frame-options': 'DENY',
+          'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
+          'permissions-policy': 'geolocation=()',
+        } },
+      ],
+    },
+    tls: { grade: 'A', issues: [] },
+    whois: {
+      registrar: 'Example Registrar', expires: '2030-01-01 00:00:00', created: '2001-01-01 00:00:00',
+      status: ['clientTransferProhibited'], nameservers: ['ns1.good.example', 'ns2.good.example'], dnssec: 'signed',
+    },
+    propagation: { results: [{ resolver: 'cf', ok: true, answers: ['192.0.2.1'] }, { resolver: 'g', ok: true, answers: ['192.0.2.1'] }] },
+  });
+  const hi = byId(healthy);
+  check('healthy domain scores A', healthy.grade === 'A', `score ${healthy.score} grade ${healthy.grade}`);
+  eq('healthy domain has no failures', healthy.counts.bad, 0);
+  eq('healthy spf passes', hi.spf.status, 'ok');
+  eq('healthy dmarc passes', hi.dmarc.status, 'ok');
+  eq('healthy dkim passes', hi.dkim.status, 'ok');
+  eq('healthy dnssec passes', hi.dnssec.status, 'ok');
+  eq('healthy https passes', hi.https.status, 'ok');
+  eq('healthy hsts passes', hi.hsts.status, 'ok');
+  eq('healthy expiry passes', hi.expiry.status, 'ok');
+  eq('healthy transfer-lock status is not a failure', hi.regstatus.status !== 'bad', true);
+  eq('healthy ns delegation agrees', hi.nssync.status, 'ok');
+  check('report text carries the score', core.reportToText(healthy).includes(`${healthy.score}/100`));
+  check('report text lists sections', /Email:/.test(core.reportToText(healthy)));
+
+  // The verdicts that are easy to get wrong.
+  const nullMx = byId(core.domainReport({ domain: 'a.example', now: NOW, records: { A: ['192.0.2.1'], MX: [{ prio: 0, host: '' }] } }));
+  eq('null MX reads as a choice, not a fault', nullMx.mx.status, 'ok');
+  const noMail = byId(core.domainReport({ domain: 'b.example', now: NOW, records: {} }));
+  eq('no MX at all is a failure', noMail.mx.status, 'bad');
+  eq('missing SPF is a failure', noMail.spf.status, 'bad');
+  eq('missing DMARC is a failure', noMail.dmarc.status, 'bad');
+  eq('no A record is a failure', noMail.resolve.status, 'bad');
+  const dead = byId(core.domainReport({ domain: 'c.example', now: NOW, records: {}, nx: true }));
+  eq('NXDOMAIN explains itself', dead.resolve.status, 'bad');
+  check('NXDOMAIN wording', /NXDOMAIN/.test(dead.resolve.detail));
+  const errored = byId(core.domainReport({ domain: 'd.example', now: NOW, records: {}, failed: ['A', 'MX', 'TXT', '_dmarc', 'DS', 'DNSKEY', 'dkim'] }));
+  eq('a blocked resolver is unknown, not a failure', errored.spf.status, 'info');
+  eq('ditto dmarc', errored.dmarc.status, 'info');
+  eq('ditto dnssec', errored.dnssec.status, 'info');
+  const none = byId(core.domainReport({ domain: 'e.example', now: NOW, records: { TXT: ['v=spf1 -all'] }, dmarc: ['v=DMARC1; p=none'] }));
+  eq('p=none warns instead of passing', none.dmarc.status, 'warn');
+  const twoSpf = byId(core.domainReport({ domain: 'f.example', now: NOW, records: { TXT: ['v=spf1 -all', 'v=spf1 a -all'] } }));
+  eq('two SPF records is a PermError', twoSpf.spf.status, 'bad');
+  const permissive = byId(core.domainReport({ domain: 'g.example', now: NOW, records: { TXT: ['v=spf1 +all'] } }));
+  eq('+all is a failure', permissive.spf.status, 'bad');
+  const expired = byId(core.domainReport({ domain: 'h.example', now: NOW, records: {}, whois: { expires: '2025-06-01 00:00:00' } }));
+  eq('an expired domain fails', expired.expiry.status, 'bad');
+  const expiring = byId(core.domainReport({ domain: 'i.example', now: NOW, records: {}, whois: { expires: '2026-02-01 00:00:00' } }));
+  eq('expiry inside 90 days warns', expiring.expiry.status, 'warn');
+  const pendingDelete = byId(core.domainReport({ domain: 'j.example', now: NOW, records: {}, whois: { status: ['pendingDelete', 'redemptionPeriod'] } }));
+  eq('pendingDelete fails the registry check', pendingDelete.regstatus.status, 'bad');
+  const httpOnly = byId(core.domainReport({ domain: 'k.example', now: NOW, records: {}, http: { chain: [{ url: 'http://k.example', status: 200, headers: {} }] } }));
+  eq('no HTTPS is a failure', httpOnly.https.status, 'bad');
+  const listed = core.domainReport({
+    domain: 'l.example', now: NOW, records: {},
+    rbl: { ip: '192.0.2.9', results: [{ list: 'zen.spamhaus.org', listed: true, response: '127.0.0.2' }] },
+  });
+  eq('a real listing fails', byId(listed).rbl.status, 'bad');
+  // Behind a CDN, a listing on the shared address is the provider's problem —
+  // say so, and don't sink the score for it.
+  const cdnListed = core.domainReport({
+    domain: 'm.example', now: NOW,
+    records: { A: ['192.0.2.9'], CNAME: ['m.example.cdn.cloudflare.net'] },
+    rbl: { ip: '192.0.2.9', results: [{ list: 'zen.spamhaus.org', listed: true, response: '127.0.0.2' }] },
+  });
+  check('shared-infra caveat is printed', /shared with other customers/.test(byId(cdnListed).rbl.detail));
+  check('shared-infra listing costs less score', cdnListed.score > listed.score, `${cdnListed.score} vs ${listed.score}`);
+  const streamed = core.domainReport({ domain: 'n.example', now: NOW, records: { A: ['192.0.2.1'] }, pending: ['http', 'tls', 'rbl', 'whois', 'geo'] });
+  const si = byId(streamed);
+  eq('not-yet-checked rows are pending', si.https.status, 'pending');
+  eq('pending rows are excluded from the verdict count', streamed.counts.pending >= 4, true);
+  eq('nothing pending once the last wave lands', byId(healthy).https.status !== 'pending', true);
+
+  // The RFC 7208 budget is a *tree* limit, so the row is graded from the
+  // recursive walk — a root record with two harmless-looking includes can still
+  // be a PermError. These pin the thresholds and the wording.
+  const spfRow = (walk, extra) => {
+    const r = Object.assign({ domain: 's.example', now: NOW, records: { TXT: ['v=spf1 include:a.example -all'] } }, extra || {});
+    if (walk) r.spfWalk = walk;
+    return byId(core.domainReport(r)).spflookups;
+  };
+  eq('spf limits come from core', [core.SPF_DNS_LOOKUP_LIMIT, core.SPF_VOID_LOOKUP_LIMIT], [10, 2]);
+  eq('spf walk under the limit is informational', spfRow({ total: 4, voids: 0, root: 2, dead: 0 }).status, 'info');
+  check('spf walk shows root vs total split', /4 of 10.*\(2 in this record/.test(spfRow({ total: 4, root: 2 }).detail));
+  eq('spf walk at 9 warns', spfRow({ total: 9, root: 9 }).status, 'warn');
+  eq('spf walk exactly at 10 warns', spfRow({ total: 10, root: 8 }).status, 'warn');
+  check('spf at-limit wording', /exactly at the limit/.test(spfRow({ total: 10, root: 8 }).detail));
+  eq('spf walk past 10 fails', spfRow({ total: 11, root: 3 }).status, 'bad');
+  check('spf over-limit names PermError', /PermError/.test(spfRow({ total: 11, root: 3 }).detail));
+  eq('too many void lookups fails', spfRow({ total: 6, voids: 3, root: 6 }).status, 'bad');
+  eq('dead include warns', spfRow({ total: 5, voids: 1, dead: 1, root: 5 }).status, 'warn');
+  eq('failed walk is unknown not failed', spfRow({ error: 'SPF walk stopped: DNS lookup failed' }).status, 'info');
+  eq('walk still running is pending', spfRow(undefined, { pending: ['spfwalk'] }).status, 'pending');
 
   // ---- dns wire format (trace) ----
   const wire = await import('../lib/dnswire.mjs');

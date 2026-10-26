@@ -11,6 +11,11 @@ Clean, ad-free sysadmin tools — DNS, email authentication, TLS, certificates, 
 
 ## Features
 
+### Overview — the one-input report
+Type a domain once and get a scored check of everything else on this list, in parallel: A/AAAA/NS/SOA/CAA records, DNSSEC, propagation across three public resolvers, reverse DNS, IP ownership (ASN/geo), hosting fingerprint, MX + MX PTR, SPF (record, policy, and the *recursive* RFC 7208 10-lookup budget across all its includes), DMARC, DKIM (probed against 12 common selectors), 15 DNS blacklists, HTTPS redirect chain, the 7-point security-header scorecard, HSTS, TLS grade, and the registration (expiry, status flags, registrar, NS delegation).
+
+Each row is graded PASS / WARN / FAIL / INFO, links straight to the tab that explains it in depth, and the whole report copies as plain text for a ticket. Checks that haven't answered yet show as "checking…" and are left out of the score; a lookup that *errored* is reported as unknown rather than as a failure. Cost: ~25 DNS queries (issued from your browser via DoH) plus four same-origin API calls.
+
 ### DNS
 - **Lookup** — A, AAAA, MX, TXT, NS, CNAME, SOA, PTR, SRV, CAA, or ALL, via Cloudflare DNS-over-HTTPS. IP input auto-switches to reverse (PTR).
 - **Propagation** — the same record across Cloudflare, Google, and DNS.SB, with a consistency verdict. Runs entirely in your browser (these are the public resolvers that expose a browser-usable JSON + CORS DoH API).
@@ -142,7 +147,7 @@ The real concern is abuse of the API endpoints — several proxy third-party ser
 ```
 index.html            privacy.html         wrangler.toml
 css/style.css
-js/    core.js app.js dns.js email.js web.js network.js cert.js whois.js myip.js m365.js cloud.js utils.js tools.js wordlist.js
+js/    core.js app.js overview.js dns.js email.js web.js network.js cert.js whois.js myip.js m365.js cloud.js utils.js tools.js wordlist.js
 lib/   parse.mjs
 functions/  _middleware.js  api/  whois.js rbl.js tls.js headers.js asn.js tenant.js myip.js dns.js
 tests/ smoke.mjs e2e.mjs README.md

@@ -50,6 +50,10 @@ async function main() {
     const res = await fetch(BASE + '/js/core.js');
     ok('GET /js/core.js', res.status === 200);
   }
+  {
+    const res = await fetch(BASE + '/js/overview.js');
+    ok('GET /js/overview.js', res.status === 200);
+  }
 
   // CORS preflight on a function
   {
@@ -150,6 +154,11 @@ async function main() {
     ok('rbl 200', status === 200, `status ${status}`);
     ok('rbl checked 15', json && json.checked === 15, JSON.stringify(json && json.checked));
     ok('rbl results array', json && Array.isArray(json.results) && json.results.length === 15);
+    // Spamhaus answers a public resolver with 127.255.255.254, which is a
+    // refusal, not a listing — it must never be reported as LISTED.
+    const sz = json && (json.results || []).find((r) => r.list === 'zen.spamhaus.org');
+    ok('rbl spamhaus refusal is not a listing', !sz || sz.listed === false, JSON.stringify(sz));
+    ok('rbl results carry a skipped flag', json && (json.results || []).every((r) => typeof r.skipped === 'boolean'));
   }
   {
     const { status } = await getJson('/api/rbl?ip=notanip');

@@ -1,14 +1,8 @@
 // web.js — HTTP Headers, Redirects, TLS Grade
 
-const SECURITY_HEADERS = [
-  'strict-transport-security',
-  'content-security-policy',
-  'x-frame-options',
-  'x-content-type-options',
-  'referrer-policy',
-  'permissions-policy',
-  'x-xss-protection',
-];
+// The canonical list lives in core.js so the Overview report grades it the same
+// way this tab does.
+const SECURITY_HEADERS = window.SECURITY_HEADER_NAMES;
 
 async function fetchChain(url) {
   const res = await fetch(`/api/headers?url=${encodeURIComponent(url)}`);

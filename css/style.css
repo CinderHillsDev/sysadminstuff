@@ -505,6 +505,53 @@ input.text-input:focus { border-color: var(--accent); }
 }
 .chain li:last-child::after { content: ''; }
 
+/* ---------- Overview report (one input, everything checked) ---------- */
+.report-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.report-score {
+  font-family: var(--mono);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.report-score span { font-size: 0.9rem; color: var(--muted); font-weight: 400; }
+
+/* Fixed layout keeps the status/label columns from dancing as rows stream in. */
+table.report-table { table-layout: fixed; }
+table.report-table td.st { width: 4.2rem; }
+table.report-table td.lbl { width: 9.5rem; color: var(--muted); font-family: var(--sans); }
+table.report-table td.dt { font-family: var(--sans); font-size: 0.85rem; }
+table.report-table td.ln { width: 7.5rem; text-align: right; }
+table.report-table td.st .badge { font-size: 0.66rem; padding: 0.1rem 0.4rem; }
+table.report-table tr.fail td.dt { color: var(--red); }
+
+.row-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.78rem;
+  padding: 0;
+  white-space: nowrap;
+}
+.row-link:hover { text-decoration: underline; }
+
+ul.fixes { margin: 0; padding-left: 0; list-style: none; }
+ul.fixes li { padding: 0.3rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+ul.fixes li:last-child { border-bottom: none; }
+ul.fixes .badge { font-size: 0.66rem; padding: 0.1rem 0.4rem; margin-right: 0.3rem; }
+ul.fixes .row-link { margin-left: 0.4rem; }
+
+@media (max-width: 560px) {
+  table.report-table td.lbl { width: auto; }
+  table.report-table td.ln { width: auto; }
+}
+
 details { margin-top: 0.5rem; }
 details summary { cursor: pointer; color: var(--accent); font-size: 0.85rem; }
 

@@ -1,7 +1,7 @@
 // app.js — tab routing, input handling, shared utils
 
 // ---- Which tabs use the shared input bar (Utils does not) ----
-const SHARED_INPUT_TABS = new Set(['dns', 'email', 'web', 'network', 'whois', 'm365', 'cloud', 'cert']);
+const SHARED_INPUT_TABS = new Set(['overview', 'dns', 'email', 'web', 'network', 'whois', 'm365', 'cloud', 'cert']);
 
 // Subtabs that live under a shared-input tab but are self-contained (need no query).
 const NO_QUERY_SUBTABS = new Set(['email:headers', 'email:builder', 'network:subnet', 'network:cidr', 'cloud:arn', 'cert:main']);
@@ -11,6 +11,7 @@ const LEGACY_SUBTABS = { 'dns:caa': ['cert', 'caa'] };
 
 // Default subtab per tab (matches the .active markup in index.html)
 const DEFAULT_SUBTAB = {
+  overview: 'main',
   dns: 'lookup',
   email: 'spf',
   web: 'httpheaders',
@@ -41,7 +42,7 @@ function getParams() {
   const p = new URLSearchParams(location.search);
   return {
     q: p.get('q') || '',
-    tab: p.get('tab') || 'dns',
+    tab: p.get('tab') || 'overview',
     sub: p.get('sub') || '',
   };
 }
@@ -232,7 +233,7 @@ function maybeRun(force = false) {
     // Prompt for input rather than erroring on first load.
     const p = panelEl(tab, sub);
     if (p && !p.dataset.rendered) {
-      p.innerHTML = `<div class="note">Enter a ${tab === 'web' ? 'URL' : 'domain, hostname, or IP'} above and press Run.</div>`;
+      p.innerHTML = `<div class="note">Enter a ${tab === 'web' ? 'URL' : tab === 'overview' ? 'domain' : 'domain, hostname, or IP'} above and press Run.</div>`;
     }
     return;
   }
@@ -269,6 +270,16 @@ function readInput() {
   state.q = val;
   return val;
 }
+
+// Jump to another tab/subtab from inside a rendered result (the Overview report
+// links every row to the tool that explains it), forcing a fresh run there.
+function jumpTo(ref) {
+  const parts = String(ref || '').split(':');
+  if (!parts[0]) return;
+  readInput();
+  activate(parts[0], parts[1], { force: true });
+}
+window.jumpTo = jumpTo;
 
 function runFromInput() {
   readInput();

@@ -60,8 +60,8 @@ async function runSPF(query, panel) {
 // tree and counts DNS lookups against RFC 7208 §4.6.4: at most 10 lookups and
 // at most 2 "void" lookups (ones that return no records). Exceeding either is a
 // PermError — receivers stop evaluating and the record effectively fails.
-const SPF_LOOKUP_LIMIT = 10;
-const SPF_VOID_LIMIT = 2;
+const SPF_LOOKUP_LIMIT = window.SPF_DNS_LOOKUP_LIMIT;
+const SPF_VOID_LIMIT = window.SPF_VOID_LOOKUP_LIMIT;
 const SPF_MAX_DEPTH = 12; // guardrail; a valid record can't nest this deep
 
 async function fetchSpf(domain) {
@@ -412,10 +412,13 @@ async function runRBL(query, panel) {
     const data = await res.json();
     const results = data.results || data;
     const listed = results.filter((r) => r.listed);
-    const summaryCls = listed.length ? 'red' : 'green';
-    const summary = `<div class="summary ${summaryCls}">Listed on ${listed.length} of ${results.length} checked blacklists${listed.length ? '.' : ' — clean.'}</div>`;
+    const skipped = results.filter((r) => r.skipped && !r.listed);
+    const summaryCls = listed.length ? 'red' : skipped.length ? 'yellow' : 'green';
+    const summary = `<div class="summary ${summaryCls}">Listed on ${listed.length} of ${results.length} blacklists${
+      listed.length ? '.' : skipped.length ? ` — clean on ${results.length - skipped.length}, ${skipped.length} refused the query (they block public resolvers).` : ' — clean.'}</div>`;
     const rows = results.map((r) =>
-      `<tr><td>${window.escapeHtml(r.list)}</td><td>${r.listed ? '<span class="badge red">LISTED</span>' : '<span class="badge green">clean</span>'}</td><td>${window.escapeHtml(r.response || '—')}</td></tr>`
+      `<tr><td>${window.escapeHtml(r.list)}</td><td>${r.listed ? '<span class="badge red">LISTED</span>'
+        : r.skipped ? '<span class="badge grey">not tested</span>' : '<span class="badge green">clean</span>'}</td><td>${window.escapeHtml(r.response || '—')}</td></tr>`
     ).join('');
     panel.innerHTML = summary + window.card(`Blacklist check — ${ip}`, `<table><thead><tr><th>Blacklist</th><th>Status</th><th>Response</th></tr></thead><tbody>${rows}</tbody></table>`);
   } catch (e) {

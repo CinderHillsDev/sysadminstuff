@@ -27,7 +27,7 @@ const ZONES = [
   'db.wpbl.info',
 ];
 
-import { isBlockedHost } from '../../lib/parse.mjs';
+import { isBlockedHost, rblVerdict, rblQuery } from '../../lib/parse.mjs';
 
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 
@@ -48,24 +48,28 @@ export async function onRequest(context) {
   if (m.slice(1).some((o) => Number(o) > 255)) return json({ error: 'Invalid IPv4 address.' }, 400);
   if (isBlockedHost(ip)) return json({ error: 'Private or reserved addresses (RFC1918) are not tracked by blacklists.' }, 400);
 
-  const reversed = ip.split('.').reverse().join('.');
-
   const results = await Promise.all(ZONES.map(async (zone) => {
-    const query = `${reversed}.${zone}`;
+    const query = rblQuery(ip, zone);
     try {
       const data = await dohA(query);
       const answers = (data.Answer || []).filter((a) => a.type === 1).map((a) => a.data);
-      const listed = answers.length > 0;
-      return { list: zone, listed, response: listed ? answers.join(', ') : '' };
+      const verdict = rblVerdict(zone, answers);
+      return { list: zone, listed: verdict.listed, response: verdict.response, skipped: verdict.skipped };
     } catch (e) {
-      return { list: zone, listed: false, response: 'lookup error' };
+      return { list: zone, listed: false, response: 'lookup error', skipped: true };
     }
   }));
 
   // If any zone lookup failed transiently, don't let the edge cache freeze a
   // partial result for the full TTL.
   const degraded = results.some((r) => r.response === 'lookup error');
-  const res = json({ ip, checked: ZONES.length, listedCount: results.filter((r) => r.listed).length, results });
+  const res = json({
+    ip,
+    checked: ZONES.length,
+    listedCount: results.filter((r) => r.listed).length,
+    skippedCount: results.filter((r) => r.skipped && !r.listed).length,
+    results,
+  });
   if (degraded) res.headers.set('Cache-Control', 'no-store');
   return res;
 }

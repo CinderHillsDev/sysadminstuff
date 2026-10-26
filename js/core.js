@@ -208,6 +208,11 @@
     return out;
   }
 
+  // RFC 7208 §4.6.4 limits, defined once here so the SPF subtab and the
+  // Overview report cannot disagree about where the cliff is.
+  const SPF_DNS_LOOKUP_LIMIT = 10;
+  const SPF_VOID_LOOKUP_LIMIT = 2;
+
   // ---------- DMARC ----------
   function parseDmarcTags(record) {
     if (!/^v=DMARC1/i.test((record || '').trim())) return null;
@@ -817,7 +822,495 @@
       resource: parts.slice(5).join(':'),
     };
   }
+  // ---------- Security headers (shared by Web > HTTP Headers and Overview) ----------
+  const SECURITY_HEADER_NAMES = [
+    'strict-transport-security',
+    'content-security-policy',
+    'x-frame-options',
+    'x-content-type-options',
+    'referrer-policy',
+    'permissions-policy',
+    'x-xss-protection',
+  ];
+
+  // ---------- Domain report (Overview tab: one input, everything checked) ----------
+  // Pure: js/overview.js collects the lookups, this grades them. No DOM and no
+  // network in here so the whole report's logic is unit-testable with fixtures.
+
+  // Selector labels worth guessing at when nobody tells us which one a domain
+  // signs with — the ones the big senders and common panels use.
+  const DKIM_SELECTORS = ['google', 'google1', 'google2', 'selector1', 'selector2',
+    'default', 'mail', 'k1', 's1', 'fm1', 'ms', 'zc'];
+
+  // Providers whose front-facing addresses are shared by many customers. A
+  // listing or missing PTR on one of these is usually the provider's story, not
+  // the domain's, so the report says so instead of alarming anyone.
+  const SHARED_INFRA_RE = /cloudflare|fastly|akamai|cloudfront|elastic load balancing|github pages|heroku|vercel|netlify|proxy\.fish|cloudflare pages/i;
+
+  // Email and registration records live on the zone, not on www — but a report
+  // started from "www.example.com" should still find them.
+  function reportDomain(host) {
+    return String(host || '').trim().toLowerCase().replace(/\.$/, '').replace(/^www\./, '');
+  }
+
+  // RDAP event dates arrive as 'YYYY-MM-DD HH:MM:SS' (UTC, per lib/parse.mjs).
+  function daysUntil(dateStr, now) {
+    if (!dateStr) return null;
+    let s = String(dateStr).trim();
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) s = s.replace(' ', 'T') + 'Z';
+    const t = Date.parse(s);
+    if (isNaN(t)) return null;
+    return Math.round((t - now) / 86400000);
+  }
+
+  // Penalty per finding, in score points: a hard failure costs 10x its weight,
+  // a warning 3x. weight defaults to 1; the checks that really matter (no SPF,
+  // listed on a blacklist, domain expired) carry more.
+  const REPORT_PENALTY = { bad: 10, warn: 3 };
+
+  // A CAA rdata line, in the readable "issue "letsencrypt.org"" form whatever
+  // format the resolver handed back.
+  function caaLabel(raw) {
+    const c = parseCaaRdata(raw);
+    return c ? `${c.tag} "${c.value}"` : String(raw).replace(/^\d+\s+/, '');
+  }
+
+  function reportScore(items) {
+    let penalty = 0;
+    const counts = { ok: 0, warn: 0, bad: 0, info: 0, pending: 0 };
+    items.forEach((i) => {
+      if (counts[i.status] !== undefined) counts[i.status]++;
+      // Pending rows have no verdict yet, so they cost nothing.
+      const unit = REPORT_PENALTY[i.status];
+      if (unit) penalty += unit * (i.weight == null ? 1 : i.weight);
+    });
+    const score = Math.max(0, Math.min(100, Math.round(100 - penalty)));
+    const grade = score >= 90 ? 'A' : score >= 75 ? 'B' : score >= 60 ? 'C' : score >= 40 ? 'D' : 'F';
+    return { score, grade, counts };
+  }
+
+  // raw = {
+  //   domain, now, pending:[source…],
+  //   records: { A:[ip], AAAA:[ip], NS:[host], CNAME:[host], SOA:[rdata], DS:[..],
+  //              DNSKEY:[..], CAA:[..], TXT:[str], MX:[{prio,host}] },
+  //   ad,                       // AD flag on the answer (resolver validated it)
+  //   dmarc: [str],             // TXT at _dmarc.<domain>
+  //   dkim: { selector: [str] },
+  //   ptr: { 'ip or host': 'ptr name'|'' },
+  //   geo: { asn, org, isp, city, country },
+  //   spfWalk: { total, voids, dead, root } | { error }, // recursive walk of the SPF tree
+  //   rbl:  { results:[{list,listed,response}] } | { error } | { pending:true },
+  //   http: { chain:[{url,status,headers}] } | { error } | { pending:true },
+  //   tls:  { grade, issues }   | { error } | { pending:true },
+  //   whois:{ registrar, created, expires, status:[..], nameservers:[..], dnssec }
+  //         | { error } | { pending:true },
+  //   propagation: { results:[{resolver,answers}] } | { pending:true }
+  // }
+  function domainReport(raw) {
+    raw = raw || {};
+    const now = typeof raw.now === 'number' ? raw.now : Date.now();
+    const domain = raw.domain || '';
+    const rec = raw.records || {};
+    const pending = {};
+    (raw.pending || []).forEach((s) => { pending[s] = true; });
+    const items = [];
+    // Sources whose data hasn't landed yet render as "checking…" rows instead of
+    // verdicts, so the score only reflects what we've actually been able to test.
+    const isPending = (src) => !!pending[src];
+    // A lookup that errored tells us nothing about the domain. Mark those rows
+    // unknown instead of failed — a blocked resolver must not read as "no SPF".
+    const failed = {};
+    (raw.failed || []).forEach((k) => { failed[k] = true; });
+    const died = (k) => !!failed[k];
+    const add = (section, source, id, label, status, detail, opts) => {
+      const o = opts || {};
+      items.push({
+        section, source, id, label, status,
+        detail: detail == null ? '' : String(detail),
+        weight: o.weight == null ? 1 : o.weight,
+        link: o.link || '',
+      });
+    };
+    const shown = (arr, max) => {
+      const a = arr || [];
+      if (!a.length) return '';
+      return a.slice(0, max || 4).join(', ') + (a.length > (max || 4) ? ` (+${a.length - (max || 4)} more)` : '');
+    };
+
+    const a = rec.A || [];
+    const cname = rec.CNAME || [];
+    const mx = rec.MX || [];
+    const geo = raw.geo;
+    // Which platform the site runs on, worked out up front: several checks read
+    // differently behind shared infrastructure — a CDN's IP can be blacklisted
+    // for somebody else's abuse, and an anycast address has no meaningful PTR.
+    const providerTargets = cname.concat(rec.NS || [], mx.map((m) => m.host)).filter(Boolean);
+    let hosting = null;
+    for (let i = 0; i < providerTargets.length && !hosting; i++) hosting = matchProvider(providerTargets[i]);
+    if (!hosting && geo) hosting = classifyCloudOrg(`${geo.org || ''} ${geo.isp || ''}`);
+    const shared = hosting && SHARED_INFRA_RE.test(hosting) ? hosting : null;
+    const sharedNote = shared ? ` This sits behind ${shared}, so the address is shared with other customers.` : '';
+
+    // ===== DNS =====
+    if (a.length || cname.length) {
+      add('DNS', 'dns', 'resolve', 'Resolves', 'ok',
+        a.join(', ') + (cname.length ? ` (CNAME → ${cname.join(', ')})` : ''),
+        { link: 'dns:lookup' });
+    } else if (died('A')) {
+      add('DNS', 'dns', 'resolve', 'Resolves', 'info', `The ${domain} A query did not complete, so the rest of the DNS rows are inconclusive.`,
+        { link: 'dns:lookup' });
+    } else if (raw.nx) {
+      add('DNS', 'dns', 'resolve', 'Resolves', 'bad',
+        `${domain} returns NXDOMAIN — the name is not published in DNS at all. If it was just registered, allow the zone to propagate before going further.`,
+        { weight: 3, link: 'dns:lookup' });
+    } else {
+      add('DNS', 'dns', 'resolve', 'Resolves', 'bad',
+        `${domain} has no A record and no CNAME — nothing is reachable at this name.`,
+        { weight: 3, link: 'dns:lookup' });
+    }
+
+    const aaaa = rec.AAAA || [];
+    add('DNS', 'dns', 'ipv6', 'IPv6', aaaa.length ? 'ok' : died('AAAA') ? 'info' : 'warn',
+      aaaa.length ? `AAAA → ${shown(aaaa, 2)}`
+        : died('AAAA') ? 'The AAAA query did not complete.'
+          : 'No AAAA record — visitors on an IPv6-only network cannot reach it.',
+      { weight: 0.5, link: 'dns:lookup' });
+
+    const ns = rec.NS || [];
+    add('DNS', 'dns', 'ns', 'Nameservers', ns.length >= 2 ? 'ok' : ns.length === 1 ? 'warn' : 'info',
+      ns.length >= 2 ? `${ns.length} authoritative servers — ${shown(ns, 3)}`
+        : ns.length === 1 ? 'Only one nameserver — a zone needs at least two to stay resolvable if one is down.'
+          : died('NS') ? 'The NS query did not complete.'
+            : 'No NS records at this name (normal for a host inside another zone).',
+      { weight: 1.5, link: 'dns:lookup' });
+
+    const soa = (rec.SOA || [])[0] || '';
+    const soaParts = soa ? soa.trim().split(/\s+/) : [];
+    const soaMin = Number(soaParts[6]);
+    const soaTtlText = Number.isFinite(soaMin)
+      ? `, minimum TTL ${soaMin >= 3600 ? Math.round(soaMin / 60) + 'm' : soaMin + 's'}` : '';
+    add('DNS', 'dns', 'soa', 'SOA', soa ? 'ok' : 'info',
+      soa ? `Zone is authoritative (SOA serial ${soaParts[2] || '?'}${soaTtlText}).`
+        : 'No SOA record returned for this name.', { link: 'dns:lookup' });
+
+    // DNSSEC: AD means a validating resolver signed off on the answer; DS in the
+    // parent means the chain of trust exists even if this resolver didn't check.
+    const ds = rec.DS || [];
+    const dnskey = rec.DNSKEY || [];
+    const ad = raw.ad === true;
+    let dnssecStatus = died('DS') && died('DNSKEY') ? 'info' : 'warn';
+    let dnssecDetail = died('DS') && died('DNSKEY')
+      ? 'Could not query DS/DNSKEY, so DNSSEC status is unknown.'
+      : 'DNSSEC is not enabled — answers about this domain are unsigned and could be spoofed on a path that performs no DNSSEC validation.';
+    if (ad) { dnssecStatus = 'ok'; dnssecDetail = 'Signed, and the resolver validated the answer (AD flag set).' + (ds.length ? ` ${ds.length} DS record(s) in the parent.` : ''); }
+    else if (ds.length || dnskey.length) { dnssecStatus = 'warn'; dnssecDetail = 'Keys are published but this resolver did not validate the answer (AD clear) — check that the DS/delegation signer made it to the parent.'; }
+    if (raw.whois && raw.whois.dnssec && raw.whois.dnssec !== 'pending') {
+      dnssecDetail += ` Registry reports the delegation ${raw.whois.dnssec}.`;
+    }
+    add('DNS', 'dns', 'dnssec', 'DNSSEC', dnssecStatus, dnssecDetail, { weight: 0.5, link: 'dns:dnssec' });
+
+    const caa = rec.CAA || [];
+    add('DNS', 'dns', 'caa', 'CAA', 'info', died('CAA') ? 'The CAA query did not complete.' : caa.length
+      ? `${caa.length} CAA rule(s) — ${shown(caa.map(caaLabel), 3)}`
+      : 'No CAA record — any CA may issue certificates for this domain.', { link: 'cert:caa' });
+
+    const prop = raw.propagation;
+    if (prop && prop.error) add('DNS', 'dns', 'propagation', 'Propagation', 'info', 'Could not compare resolvers.', { link: 'dns:propagation' });
+    else if (prop && prop.results) {
+      const answered = prop.results.filter((r) => r.ok && (r.answers || []).length);
+      const sigs = new Set(answered.map((r) => r.answers.join(',')));
+      const consistent = answered.length > 1 && sigs.size === 1;
+      add('DNS', 'dns', 'propagation', 'Propagation', consistent ? 'ok' : 'warn',
+        consistent ? `Identical on ${answered.length} public resolvers.`
+          : answered.length < 2 ? 'Fewer than two resolvers answered — consistency is inconclusive.'
+            : `The resolvers returned different addresses (${[...sigs].length} distinct) — routine for a round-robin or anycast pool, or a sign a change is still propagating.`,
+        { weight: 0.5, link: 'dns:propagation' });
+    }
+
+    const ptr = raw.ptr || {};
+    const mainIp = a[0];
+    if (mainIp) {
+      const p = ptr[mainIp] || '';
+      add('DNS', 'dns', 'rdns', 'Reverse DNS (web IP)', p ? 'ok' : 'warn',
+        p ? `${mainIp} → ${p}` : `No PTR record for ${mainIp}.${sharedNote || ' Some mail and security appliances treat an unexplained reverse DNS as a poor signal.'}`,
+        { weight: 0.5, link: 'network:rdns' });
+    }
+
+    if (isPending('geo')) add('DNS', 'geo', 'geo', 'IP ownership', 'pending', 'Looking up the address owner…', { link: 'network:asn' });
+    else if (geo && (geo.org || geo.isp || geo.asn)) {
+      add('DNS', 'geo', 'geo', 'IP ownership', 'info',
+        [geo.asn ? 'AS' + geo.asn : '', geo.org || geo.isp, geo.city, geo.country].filter(Boolean).join(' · '),
+        { link: 'network:asn' });
+    }
+
+    add('DNS', 'dns', 'stack', 'Platform', hosting ? 'ok' : 'info',
+      hosting ? `Looks like ${hosting} (inferred from CNAME/MX/NS${geo && geo.asn ? ' and ASN' : ''}).`
+        : 'No recognizable hosting/CDN/email/DNS provider in the CNAME, MX, or NS targets.',
+      { link: 'cloud:fingerprint' });
+
+    // ===== Email =====
+    // A lone "0 ." MX is RFC 7505's way of saying "this domain sends no mail" —
+    // an anti-forgery statement, not a missing record.
+    const nullMx = mx.length === 1 && Number(mx[0].prio) === 0 && !mx[0].host;
+    add('Email', 'dns', 'mx', 'MX',
+      nullMx || mx.length ? 'ok' : died('MX') ? 'info' : a.length ? 'warn' : 'bad',
+      nullMx ? 'Null MX (RFC 7505) — the domain declares that it sends no mail, so forgery of it as a sender should be rejected.'
+        : mx.length ? `${mx.length} mail exchange(s) — ${mx.map((m) => `${m.prio} ${m.host}`).join(', ')}`
+          : died('MX') ? 'The MX query did not complete.'
+            : a.length ? 'No MX records — receivers fall back to delivering to the A record directly, which works but is fragile.'
+              : 'No MX records and no A record to fall back to — mail for this domain is refused.',
+      { weight: mx.length ? 1 : a.length ? 0.5 : 2, link: 'email:mx' });
+
+    const mxNoPtr = mx.filter((m) => m.host && !ptr[m.host]);
+    if (mx.length && !nullMx) {
+      add('Email', 'dns', 'mxptr', 'MX reverse DNS', mxNoPtr.length ? 'warn' : 'ok',
+        mxNoPtr.length ? `No PTR for ${shown(mxNoPtr.map((m) => m.host), 3)} — HELO/PTR checks at receiving sites are more likely to fail.`
+          : 'Every MX host has a matching reverse record.',
+        { weight: 0.5, link: 'email:mx' });
+    }
+
+    const txts = rec.TXT || [];
+    const spfRecords = txts.filter((t) => /^v=spf1/i.test(String(t).trim()));
+    const spf = spfRecords[0];
+    if (died('TXT')) {
+      add('Email', 'dns', 'spf', 'SPF', 'info', 'The TXT query did not complete.', { link: 'email:spf' });
+    } else if (!spfRecords.length) {
+      add('Email', 'dns', 'spf', 'SPF', 'bad',
+        'No SPF record. Receivers cannot tell legitimate mail from forged mail claiming to be this domain — and DMARC needs SPF to pass alignment.',
+        { weight: 2, link: 'email:spf' });
+    } else if (spfRecords.length > 1) {
+      add('Email', 'dns', 'spf', 'SPF', 'bad',
+        `${spfRecords.length} SPF records at one name is a PermError — receivers stop evaluating. Merge them into a single record.`,
+        { weight: 1.5, link: 'email:spf' });
+    } else {
+      const parsed = parseSpf(spf);
+      const ending = parsed ? parsed.all : null;
+      const spfWeight = { '-': 1, '~': 0.3, '?': 0.7, '+': 2, null: 1 }[ending == null ? 'null' : ending];
+      const endingText = { '-': 'hard fail (-all)', '~': 'soft fail (~all)', '?': 'neutral (?all)', '+': 'PERMISSIVE (+all) — this authorizes any sender on the internet' }[ending];
+      add('Email', 'dns', 'spf', 'SPF', ending === '+' ? 'bad' : 'ok',
+        `${endingText || 'no "all" term — the effective default is neutral'} · ${spf}`,
+        { weight: spfWeight, link: 'email:spf' });
+      // RFC 7208 §4.6.4 caps SPF evaluation at 10 DNS lookups and 2 void
+      // lookups across the WHOLE tree, not just the root record — so this row
+      // is graded from the recursive walk js/overview.js runs (same walker the
+      // Email > SPF Lookups tab uses). raw.spfWalk is absent until it lands.
+      const walk = raw.spfWalk;
+      if (isPending('spfwalk')) {
+        add('Email', 'dns', 'spflookups', 'SPF lookup budget', 'pending', 'Walking the includes…', { link: 'email:spfcheck' });
+      } else if (walk && walk.error) {
+        add('Email', 'dns', 'spflookups', 'SPF lookup budget', 'info', walk.error, { link: 'email:spfcheck' });
+      } else if (walk && typeof walk.total === 'number') {
+        const over = walk.total > SPF_DNS_LOOKUP_LIMIT;
+        const overVoid = (walk.voids || 0) > SPF_VOID_LOOKUP_LIMIT;
+        let st = 'info';
+        let weight = 1;
+        let detail = `${walk.total} of ${SPF_DNS_LOOKUP_LIMIT} DNS lookups used`;
+        if (walk.root != null && walk.root !== walk.total) detail += ` (${walk.root} in this record, the rest inside its includes)`;
+        else detail += ' in this record';
+        if (walk.voids) detail += ` · ${walk.voids} of ${SPF_VOID_LOOKUP_LIMIT} void`;
+        if (over) { st = 'bad'; weight = 2; detail += ' — past the limit, so receivers stop evaluating with PermError and SPF fails closed for everything this domain sends.'; }
+        else if (overVoid) { st = 'bad'; weight = 1.5; detail += ' — too many lookups that returned nothing, which is a PermError on its own.'; }
+        else if (walk.dead) { st = 'warn'; detail += ` · ${walk.dead} included domain publishes no SPF record — dead weight, and it becomes a PermError if they ever add one`; }
+        else if (walk.total === SPF_DNS_LOOKUP_LIMIT) { st = 'warn'; weight = 0.5; detail += ' — exactly at the limit; one more included sender tips it into PermError'; }
+        else if (walk.total === SPF_DNS_LOOKUP_LIMIT - 1) { st = 'warn'; weight = 0.5; detail += ' — one step from the limit; check before adding another sender'; }
+        add('Email', 'dns', 'spflookups', 'SPF lookup budget', st, detail + '.', { weight, link: 'email:spfcheck' });
+      }
+    }
+
+    const dmarcTxt = (raw.dmarc || []).filter((t) => /^v=DMARC1/i.test(String(t).trim()))[0];
+    if (died('_dmarc')) {
+      add('Email', 'dns', 'dmarc', 'DMARC', 'info', 'The _dmarc TXT query did not complete.', { link: 'email:dmarc' });
+    } else if (!dmarcTxt) {
+      add('Email', 'dns', 'dmarc', 'DMARC', 'bad',
+        `No DMARC record at _dmarc.${domain}. Without one, receivers have no policy for unauthenticated mail and no address to send reports to.`,
+        { weight: 2, link: 'email:dmarc' });
+    } else {
+      const tags = parseDmarcTags(dmarcTxt) || {};
+      const p = (tags.p || '').toLowerCase();
+      let st = 'ok';
+      let detail;
+      let weight = 1;
+      if (!p) { st = 'bad'; detail = `DMARC record has no p= tag, so it is invalid and ignored: ${dmarcTxt}`; weight = 1.5; }
+      else if (p === 'none') { st = 'warn'; detail = 'p=none — monitoring only. Nothing is enforced against forgeries; move to quarantine, then reject, once reports look clean.'; weight = 1.5; }
+      else { detail = `p=${p}${tags.sp ? ` (subdomains: sp=${tags.sp})` : ''}${tags.pct && tags.pct !== '100' ? `, applied to ${tags.pct}% of mail` : ''}.`; if (p === 'quarantine') weight = 0.5; }
+      detail += tags.rua ? ` Reports → ${tags.rua}.` : ' No rua= address, so nobody receives aggregate reports about what is failing.';
+      add('Email', 'dns', 'dmarc', 'DMARC', st, detail, { weight, link: 'email:dmarc' });
+    }
+
+    const dkimMap = raw.dkim || {};
+    const found = [];
+    const revoked = [];
+    let dkimTesting = false;
+    Object.keys(dkimMap).forEach((sel) => {
+      const rec2 = (dkimMap[sel] || []).filter((t) => /(^|;)\s*(v=DKIM1|k=|p=)/i.test(String(t)))[0];
+      if (!rec2) return;
+      const tags = {};
+      String(rec2).split(';').forEach((seg) => {
+        const kv = seg.trim().split('=');
+        if (kv[0]) tags[kv[0].trim().toLowerCase()] = kv.slice(1).join('=').trim();
+      });
+      if (tags.p && tags.p.length > 8) found.push(sel); else if (tags.p === '' || tags.p === undefined) revoked.push(sel);
+      if ((tags.t || '').split(':').map((f) => f.trim().toLowerCase()).indexOf('y') >= 0) dkimTesting = true;
+    });
+    if (died('dkim')) {
+      add('Email', 'dns', 'dkim', 'DKIM', 'info', 'The DKIM selector queries did not complete.', { link: 'email:dkim' });
+    } else if (found.length && revoked.length) {
+      add('Email', 'dns', 'dkim', 'DKIM', 'warn',
+        `Keys are live for ${shown(found, 4)}, but ${shown(revoked, 3)} publish an empty p= (revoked) — mail signed with those fails.`,
+        { weight: 1.5, link: 'email:dkim' });
+    } else if (found.length) {
+      add('Email', 'dns', 'dkim', 'DKIM', dkimTesting ? 'warn' : 'ok',
+        `Public key published for ${found.length} of ${DKIM_SELECTORS.length} common selectors (${shown(found, 4)}).${dkimTesting ? ' t=y sets testing mode — signature failures do not affect delivery.' : ''}`,
+        { link: 'email:dkim' });
+    } else if (revoked.length) {
+      add('Email', 'dns', 'dkim', 'DKIM', 'warn',
+        'Every selector probed answers with an empty p= — no usable signing key, so treat outbound mail as unsigned (some zones answer that way for every name).',
+        { weight: 1, link: 'email:dkim' });
+    } else {
+      add('Email', 'dns', 'dkim', 'DKIM', 'warn',
+        `No DKIM key found for ${DKIM_SELECTORS.length} common selectors (${DKIM_SELECTORS.slice(0, 6).join(', ')}…). Either mail is unsigned, or a custom selector is in use.`,
+        { weight: 1, link: 'email:dkim' });
+    }
+
+    const rbl = raw.rbl;
+    if (isPending('rbl')) add('Email', 'rbl', 'rbl', 'Blacklists', 'pending', 'Checking 15 DNS blacklists…', { link: 'email:rbl' });
+    else if (rbl && rbl.error) add('Email', 'rbl', 'rbl', 'Blacklists', 'info', rbl.error, { link: 'email:rbl' });
+    else if (rbl && rbl.results) {
+      const listed = rbl.results.filter((r) => r.listed);
+      const failed = rbl.results.filter((r) => r.response === 'lookup error');
+      const refused = rbl.results.filter((r) => r.skipped && !r.listed && r.response !== 'lookup error');
+      add('Email', 'rbl', 'rbl', 'Blacklists', listed.length ? 'bad' : 'ok',
+        listed.length
+          ? `Listed on ${listed.length} of ${rbl.results.length} blacklists: ${shown(listed.map((r) => r.list), 3)}.${sharedNote || ` Mail from ${rbl.ip || 'this address'} will be blocked at sites using them.`}`
+          : `Clean on ${rbl.results.length - failed.length - refused.length} blacklists`
+            + (refused.length ? `, ${refused.length} refused the query (they block public resolvers, so not tested)` : '')
+            + (failed.length ? `, ${failed.length} unreachable` : '') + '.',
+        { weight: listed.length ? (shared ? 0.5 : 2) : 1, link: 'email:rbl' });
+    }
+
+    // ===== Web =====
+    const http = raw.http;
+    if (isPending('http')) {
+      add('Web', 'http', 'https', 'HTTPS', 'pending', 'Fetching the site…', { link: 'web:redirects' });
+      add('Web', 'http', 'secheaders', 'Security headers', 'pending', 'Fetching the site…', { link: 'web:httpheaders' });
+      add('Web', 'http', 'hsts', 'HSTS', 'pending', 'Fetching the site…', { link: 'web:httpheaders' });
+    } else if (http && http.error) {
+      add('Web', 'http', 'https', 'HTTPS', 'bad', http.error, { weight: 1.5, link: 'web:httpheaders' });
+    } else if (http && http.chain) {
+      const hops = http.chain;
+      const final = hops[hops.length - 1] || {};
+      const headers = final.headers || {};
+      const lower = {};
+      Object.keys(headers).forEach((k) => { lower[k.toLowerCase()] = headers[k]; });
+      const httpsOK = /^https:\/\//i.test(final.url || '');
+      const redirected = hops.some((h) => /^http:\/\//i.test(h.url || ''));
+      add('Web', 'http', 'https', 'HTTPS', httpsOK ? 'ok' : 'bad',
+        httpsOK
+          ? `Final URL ${final.url}${hops.length > 1 ? ` after ${hops.length - 1} redirect(s)` : ''}${redirected ? ' (HTTP does redirect to HTTPS)' : ''}`
+          : 'The site is reachable over plain HTTP and never lands on HTTPS — traffic and cookies are sent in the clear.',
+        { weight: 2, link: 'web:redirects' });
+      const code = Number(final.status);
+      if (code >= 400) {
+        add('Web', 'http', 'status', 'HTTP status', code >= 500 ? 'bad' : 'warn',
+          `The final response is ${code}.`, { weight: code >= 500 ? 1 : 0.5, link: 'web:httpheaders' });
+      }
+      const hsts = lower['strict-transport-security'];
+      const maxAge = /max-age=(\d+)/i.exec(hsts || '');
+      let hstsStatus = 'warn';
+      let hstsDetail = 'No Strict-Transport-Security header — a stripped HTTPS link can silently downgrade back to HTTP.';
+      let hstsWeight = 0.5;
+      if (hsts) {
+        const secs = Number(maxAge ? maxAge[1] : 0);
+        if (secs >= 31536000) { hstsStatus = 'ok'; hstsDetail = `HSTS max-age ${Math.round(secs / 86400)} days${/includesubdomains/i.test(hsts) ? ' incl. subdomains' : ' (subdomains not covered)'}${/preload/i.test(hsts) ? ', preload requested' : ''}.`; hstsWeight = 1; }
+        else if (secs >= 15768000) { hstsStatus = 'warn'; hstsDetail = `HSTS max-age is only ${Math.round(secs / 86400)} days — 1 year is the recommended floor.`; }
+        else { hstsStatus = 'warn'; hstsDetail = `HSTS present but max-age=${secs}s is far too short to protect returning visitors.`; hstsWeight = 1; }
+      }
+      add('Web', 'http', 'hsts', 'HSTS', hstsStatus, hstsDetail, { weight: hstsWeight, link: 'web:httpheaders' });
+      const present = SECURITY_HEADER_NAMES.filter((h) => lower[h] !== undefined);
+      const missing = SECURITY_HEADER_NAMES.filter((h) => lower[h] === undefined);
+      add('Web', 'http', 'secheaders', 'Security headers',
+        present.length >= 5 ? 'ok' : 'warn',
+        `${present.length}/${SECURITY_HEADER_NAMES.length} present${missing.length ? ` — missing ${missing.join(', ')}` : ''}.`,
+        { weight: present.length >= 5 ? 1 : present.length >= 3 ? 0.7 : 1, link: 'web:httpheaders' });
+    }
+
+    const tls = raw.tls;
+    if (isPending('tls')) add('Web', 'tls', 'tls', 'TLS', 'pending', 'Negotiating TLS…', { link: 'web:tls' });
+    else if (tls && tls.error) add('Web', 'tls', 'tls', 'TLS', 'info', tls.error, { link: 'web:tls' });
+    else if (tls) {
+      const g = ['A', 'B', 'C', 'F'].indexOf(tls.grade) >= 0 ? tls.grade : 'F';
+      add('Web', 'tls', 'tls', 'TLS', g === 'A' ? 'ok' : g === 'F' ? 'bad' : 'warn',
+        `Grade ${g}${(tls.issues || []).length ? ' — ' + tls.issues.join('; ') : ' — modern handshake, certificate chain validated'}.`,
+        { weight: g === 'F' ? 2 : 1, link: 'web:tls' });
+    }
+
+    // ===== Registration =====
+    const w = raw.whois;
+    if (isPending('whois')) add('Registration', 'whois', 'expiry', 'Registration', 'pending', 'Querying RDAP…', { link: 'whois:main' });
+    else if (w && w.error) add('Registration', 'whois', 'expiry', 'Registration', 'info', w.error, { link: 'whois:main' });
+    else if (w) {
+      const days = daysUntil(w.expires, now);
+      let st = 'info';
+      let detail = w.expires ? `Expires ${w.expires}.` : 'No expiration date published by this registry.';
+      let weight = 1;
+      if (days != null) {
+        detail = (days >= 0 ? `${days} days left (expires ${w.expires}).` : `EXPIRED ${-days} days ago (${w.expires}).`);
+        st = days < 0 ? 'bad' : days < 30 ? 'bad' : days < 90 ? 'warn' : 'ok';
+        weight = days < 0 ? 3 : days < 30 ? 2 : 1;
+      }
+      add('Registration', 'whois', 'expiry', 'Domain expiry', st, detail, { weight, link: 'whois:main' });
+      // clientTransferProhibited / autoRenewPeriod etc. are normal (or good).
+      // Only these mean the domain is lost, parked-out, or resolution is stopped.
+      const statusList = (w.status || []).map((s) => String(s));
+      const blocked = statusList.filter((s) => /pendingdelete|redemptionperiod|hold$|dispute|strikenow/.test(s.replace(/[\s_-]/g, '').toLowerCase()));
+      add('Registration', 'whois', 'regstatus', 'Registry status', blocked.length ? 'bad' : statusList.length ? 'ok' : 'info',
+        blocked.length ? `Status flag(s) that stop resolution or mean the domain is lost: ${blocked.join(', ')}.`
+          : statusList.length ? `Normal registry status — ${shown(statusList, 3)}.` : 'No status information returned.',
+        { weight: 3, link: 'whois:main' });
+      add('Registration', 'whois', 'registrar', 'Registrar', 'info',
+        [w.registrar, w.created ? `created ${w.created}` : ''].filter(Boolean).join(' · ') || 'No registrar data returned.',
+        { link: 'whois:main' });
+      // What the registry delegates vs what the zone actually serves.
+      const registryNs = (w.nameservers || []).map((s) => String(s).toLowerCase().replace(/\.$/, ''));
+      if (registryNs.length && ns.length) {
+        const zoneNs = ns.map((s) => String(s).toLowerCase().replace(/\.$/, ''));
+        const overlap = registryNs.filter((n) => zoneNs.indexOf(n) >= 0);
+        add('Registration', 'dns', 'nssync', 'NS delegation agrees', overlap.length ? 'ok' : 'warn',
+          overlap.length ? 'The zone\'s nameservers match what the registry has on file.'
+            : `NS in the zone (${shown(zoneNs, 3)}) does not appear in the registry's delegation (${shown(registryNs, 3)}) — a change may be mid-flight or the parent is stale.`,
+          { weight: overlap.length ? 1 : 1, link: 'whois:main' });
+      }
+    }
+
+    // Pending rows carry no verdict, so they're counted but cost nothing.
+    const result = reportScore(items);
+    return {
+      domain,
+      items,
+      score: result.score,
+      grade: result.grade,
+      counts: result.counts,
+      // How many rows reached a real verdict. Zero means every lookup failed —
+      // the caller shows an error instead of a score that would read as "clean".
+      judged: result.counts.ok + result.counts.warn + result.counts.bad,
+    };
+  }
+
+  // Plain-text rendering of a report, for copy/paste into a ticket.
+  function reportToText(report) {
+    const mark = { ok: '[OK]  ', warn: '[WARN]', bad: '[FAIL]', info: '[INFO]', pending: '[ ....]' };
+    const lines = [`Domain report — ${report.domain}`, `Score ${report.score}/100 (grade ${report.grade})`, ''];
+    let section = '';
+    (report.items || []).forEach((i) => {
+      if (i.section !== section) { section = i.section; lines.push('', `${section}:`); }
+      lines.push(`${mark[i.status] || '[?]'} ${i.label}${i.detail ? ': ' + i.detail : ''}`);
+    });
+    return lines.join('\n').replace(/^\n+/, '');
+  }
+
   const api = {
+    SECURITY_HEADER_NAMES, DKIM_SELECTORS, SPF_DNS_LOOKUP_LIMIT, SPF_VOID_LOOKUP_LIMIT,
+    reportDomain, daysUntil, domainReport, reportToText, reportScore, caaLabel,
     isIPv4, isIPv6, isIP, isDomain, isCIDR, isASN, isURL, normalizeURL, isPrivateIP,
     matchProvider, classifyCloudOrg, parseArn, parseCaaRdata, caaCandidates,
     parseCertificate, parseCsr,

@@ -9,6 +9,7 @@ Guidance for working in this repo.
 ## Architecture
 
 - **Frontend:** `index.html` + `css/style.css` + `js/*.js`. Each `js/<tab>.js` module registers its tools via `window.registerRunner(tab, subtab, fn)`. `js/app.js` owns tab/subtab routing, the shared input bar, URL params (`?q=&tab=&sub=`), and shared helpers (exposed on `window`: `dohQuery`, `resolveToIP`, `card`, `showResult`, `isIP`, etc.).
+- **Overview tab** (`js/overview.js`) is the landing tab: it fans out to the same lookups the other tabs use and renders a scored report. What each finding *means* — status, wording, score weight — is pure logic in `core.js` (`domainReport`, `reportToText`), so it stays unit-testable; `overview.js` only collects data and paints. Rows deep-link with `window.jumpTo('tab:sub')` (defined in `app.js`). It reuses the other tabs' machinery (`walkSpf`, the parsers in `core.js`) instead of reimplementing it, so the report and the detail tabs can't disagree.
 - **Backend:** each `functions/api/*.js` exports `onRequest(context)`, returns JSON, sets `Access-Control-Allow-Origin: *`, and handles `OPTIONS`.
 - **Deploy:** push to `main` → Cloudflare Pages auto-deploys static files + functions. Nothing to run by hand.
 
@@ -17,6 +18,8 @@ Guidance for working in this repo.
 - The shared input bar is hidden on the **Utils** tab and for self-contained subtabs listed in `NO_QUERY_SUBTABS` (email Header Analyzer, network Subnet Calculator).
 - Client-side-only tools (JWT, Base64, URL Encode, Subnet) must never make network calls and must show a visible "runs in your browser" note.
 - Frontend modules attach their run functions through `registerRunner`; don't call runners directly.
+- The RFC 7208 SPF limits (`SPF_DNS_LOOKUP_LIMIT`, `SPF_VOID_LOOKUP_LIMIT`) are defined once in `core.js` and read by both the SPF Lookups subtab and the Overview report. The 10-lookup cap is a *tree* limit — counting only the root record's mechanisms understates it, so grade it from `walkSpf`.
+- Blacklist answers are interpreted by `rblVerdict()` in `lib/parse.mjs` — for the Spamhaus/CBL/Barracuda zones only the documented listing codes mean "listed" (`127.255.255.x` is a *refusal* to answer public resolvers, not a listing). Don't reduce an RBL check to "any answer means listed".
 
 ## Privacy — non-negotiable (see PRIVACY.md)
 
