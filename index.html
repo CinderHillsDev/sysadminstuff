@@ -52,9 +52,21 @@
       <button class="tab" data-tab="utils">Utils</button>
     </nav>
 
-    <!-- Overview — the all-in-one report; each row deep-links into the tool below it -->
+    <!-- Overview — the all-in-one report. The categories are filters over one
+         collected run, so switching between them costs no new lookups. -->
     <div id="tab-overview" class="tab-panel active">
-      <div class="subpanel active" id="panel-overview-main"></div>
+      <nav class="tabs secondary">
+        <button class="subtab active" data-subtab="all" data-tip="Every category on one page">All</button>
+        <button class="subtab" data-subtab="dns" data-tip="Records, DNSSEC, propagation, reverse DNS, hosting">DNS</button>
+        <button class="subtab" data-subtab="email" data-tip="MX, SPF, DMARC, DKIM, blacklists">Email</button>
+        <button class="subtab" data-subtab="web" data-tip="HTTPS, HSTS, security headers, TLS">Web</button>
+        <button class="subtab" data-subtab="reg" data-tip="Expiry, status flags, registrar, delegation">Registration</button>
+      </nav>
+      <div class="subpanel active" id="panel-overview-all"></div>
+      <div class="subpanel" id="panel-overview-dns"></div>
+      <div class="subpanel" id="panel-overview-email"></div>
+      <div class="subpanel" id="panel-overview-web"></div>
+      <div class="subpanel" id="panel-overview-reg"></div>
     </div>
 
     <!-- DNS -->

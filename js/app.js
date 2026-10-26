@@ -11,7 +11,7 @@ const LEGACY_SUBTABS = { 'dns:caa': ['cert', 'caa'] };
 
 // Default subtab per tab (matches the .active markup in index.html)
 const DEFAULT_SUBTAB = {
-  overview: 'main',
+  overview: 'all',
   dns: 'lookup',
   email: 'spf',
   web: 'httpheaders',

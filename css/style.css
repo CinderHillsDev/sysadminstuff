@@ -206,6 +206,20 @@ main {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
+/* Status dot on the Overview category buttons: filtering to one section must
+   not be able to hide a failure in another. (::before, because ::after is the
+   subtab tooltip.) */
+.subtab.has-fail::before, .subtab.has-warn::before {
+  content: '';
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+  vertical-align: 0.05rem;
+}
+.subtab.has-fail::before { background: var(--red); }
+.subtab.has-warn::before { background: var(--yellow); }
 /* tooltip */
 .subtab[data-tip]:hover::after {
   content: attr(data-tip);

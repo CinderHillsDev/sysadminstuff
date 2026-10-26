@@ -54,6 +54,16 @@ async function main() {
     const res = await fetch(BASE + '/js/overview.js');
     ok('GET /js/overview.js', res.status === 200);
   }
+  // The Overview category subtabs are a filter over one collected run, and
+  // overview.js maps sub -> section by these exact ids; a rename in either
+  // place would leave a blank panel, so pin them here.
+  {
+    const res = await fetch(BASE + '/');
+    const html = await res.text();
+    const subs = ['all', 'dns', 'email', 'web', 'reg'];
+    ok('overview subtabs present', subs.every((s) => html.includes(`data-subtab="${s}"`)));
+    ok('overview subpanels present', subs.every((s) => html.includes(`id="panel-overview-${s}"`)));
+  }
 
   // CORS preflight on a function
   {

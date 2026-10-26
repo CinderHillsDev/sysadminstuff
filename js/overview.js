@@ -6,9 +6,10 @@
 // which is pure and unit-tested.
 //
 // Cost per report: ~25 DNS queries (issued straight from the browser via DoH —
-// free, and only proxied through /api/dns when the network blocks public DoH)
-// plus four Pages Function calls (/api/rbl, /api/headers, /api/tls, /api/whois)
-// and one ipwho.is lookup.
+// free, and only proxied through /api/dns when the network blocks direct DoH)
+// plus four Pages Functions calls (/api/rbl, /api/headers, /api/tls,
+// /api/whois) and one ipwho.is lookup. The category subtabs are filters over
+// that one collection — switching DNS -> Email starts no new lookups.
 
 const OV_TYPES = ['A', 'AAAA', 'NS', 'CNAME', 'SOA', 'DS', 'DNSKEY', 'CAA', 'TXT', 'MX'];
 const OV_TYPE_NUM = {
@@ -16,8 +17,15 @@ const OV_TYPE_NUM = {
 };
 const OV_PROP_RESOLVERS = ['cloudflare', 'google', 'dnssb'];
 
-// Bumped on every run so a slow response from a superseded run can't render
-// over the report the user is now looking at.
+// Subtab -> the report section it shows (null = all of them). Keeping this in
+// the URL (?tab=overview&sub=email&q=…) makes a single category shareable.
+const OV_SECTION_BY_SUB = { all: null, dns: 'DNS', email: 'Email', web: 'Web', reg: 'Registration' };
+const OV_SECTION_ORDER = ['DNS', 'Email', 'Web', 'Registration'];
+
+// The one collected report, shared by every subtab panel. Bumped (with a new
+// run token) when the domain changes, so a slow response from a superseded run
+// can't paint over the report the user is now looking at.
+let ovState = null;
 let overviewRun = 0;
 
 // One DoH query, reduced to what the report needs. Never throws: a failed
@@ -84,95 +92,112 @@ async function ovJson(path, failMsg) {
   }
 }
 
-function ensureOverviewSkeleton(panel) {
-  let out = panel.querySelector('#ov-out');
-  if (out) return out;
-  panel.innerHTML =
-    '<div class="note">One pass over a domain: DNS and DNSSEC, mail authentication (MX, SPF, DKIM, ' +
-    'DMARC, blacklists), the web server (HTTPS, headers, TLS) and the registration. Lookups run in ' +
-    'parallel; rows fill in as they land.</div><div id="ov-out"></div>';
-  // Deep link into the detail tab for whatever the row is about. Delegated on the
-  // panel so it survives the re-renders below.
-  panel.addEventListener('click', (ev) => {
-    const btn = ev.target && ev.target.closest ? ev.target.closest('[data-jump]') : null;
-    if (btn) window.jumpTo(btn.getAttribute('data-jump'));
-  });
-  return panel.querySelector('#ov-out');
+// ---------- rendering ----------
+
+function rowsHtml(items, e) {
+  const mark = { ok: 'green', warn: 'yellow', bad: 'red', info: 'grey', pending: 'grey' };
+  const word = { ok: 'PASS', warn: 'WARN', bad: 'FAIL', info: 'INFO', pending: '…' };
+  return items.map((i) =>
+    `<tr${i.status === 'bad' ? ' class="fail"' : ''}><td class="st"><span class="badge ${mark[i.status]}">${word[i.status]}</span></td>` +
+    `<td class="lbl">${e(i.label)}</td>` +
+    `<td class="dt">${i.status === 'pending' ? '<span class="muted">checking\u2026</span>' : e(i.detail)}</td>` +
+    `<td class="ln">${i.link && i.status !== 'pending' ? `<button class="row-link" data-jump="${e(i.link)}">detail \u2192</button>` : ''}</td></tr>`
+  ).join('');
 }
 
-function renderReport(raw) {
+function attentionHtml(items, e) {
+  return window.card(`Needs attention (${items.length})`, '<ul class="fixes">' + items.map((i) =>
+    `<li><span class="badge ${i.status === 'bad' ? 'red' : 'yellow'}">${i.status === 'bad' ? 'FAIL' : 'WARN'}</span> ` +
+    `<strong>${e(i.label)}</strong> — ${e(i.detail)}` +
+    (i.link ? ` <button class="row-link" data-jump="${e(i.link)}">open ${e(i.link.replace(':', ' > '))}</button>` : '') +
+    '</li>').join('') + '</ul>');
+}
+
+function reportHtml(raw, sub) {
   const rep = window.domainReport(raw);
   const e = window.escapeHtml;
+  const section = Object.prototype.hasOwnProperty.call(OV_SECTION_BY_SUB, sub) ? OV_SECTION_BY_SUB[sub] : null;
 
   if (!rep.judged && !rep.items.some((i) => i.status === 'pending')) {
     return '<div class="summary red">Nothing could be checked. Every lookup failed — this network may be ' +
       'blocking DNS-over-HTTPS and the site&#39;s own resolver endpoints.</div>';
   }
 
-  const headline = rep.items.filter((i) => i.status === 'bad' || i.status === 'warn');
+  const problems = rep.items.filter((i) => i.status === 'bad' || i.status === 'warn');
+  const shown = section ? rep.items.filter((i) => i.section === section) : rep.items;
+  const shownProblems = shown.filter((i) => i.status === 'bad' || i.status === 'warn');
+  const elsewhere = problems.length - shownProblems.length;
+
   const head =
     `<div class="report-head"><div class="grade ${rep.grade}">${rep.grade}</div><div>` +
     `<div class="report-score">${rep.score}<span>/100</span></div>` +
     `<div class="muted">${e(raw.domain)} · ${rep.counts.ok} pass · ${rep.counts.warn} warn · ${rep.counts.bad} fail` +
     (rep.counts.pending ? ` · ${rep.counts.pending} still running` : '') + '</div></div></div>';
 
-  const attention = headline.length
-    ? window.card(`Needs attention (${headline.length})`, '<ul class="fixes">' + headline.map((i) =>
-      `<li><span class="badge ${i.status === 'bad' ? 'red' : 'yellow'}">${i.status === 'bad' ? 'FAIL' : 'WARN'}</span> ` +
-      `<strong>${e(i.label)}</strong> — ${e(i.detail)}` +
-      (i.link ? ` <button class="row-link" data-jump="${e(i.link)}">open ${e(i.link.replace(':', ' > '))}</button>` : '') +
-      '</li>').join('') + '</ul>')
-    : '<div class="summary green">✓ Nothing failed and nothing is warning — see the detail below.</div>';
+  const intro = section ? '' :
+    '<div class="note">One pass over the domain: DNS and DNSSEC, mail authentication, the web server, and ' +
+    'the registration. Pick a category above to see fewer rows; every row links to the tool that explains it.</div>';
 
-  const mark = { ok: 'green', warn: 'yellow', bad: 'red', info: 'grey', pending: 'grey' };
-  const word = { ok: 'PASS', warn: 'WARN', bad: 'FAIL', info: 'INFO', pending: '…' };
-  const sections = ['DNS', 'Email', 'Web', 'Registration'];
-  const bodies = sections.map((section) => {
-    const rows = rep.items.filter((i) => i.section === section);
-    if (!rows.length) return '';
-    return window.card(section, '<table class="report-table"><tbody>' + rows.map((i) =>
-      `<tr${i.status === 'bad' ? ' class="fail"' : ''}><td class="st"><span class="badge ${mark[i.status]}">${word[i.status]}</span></td>` +
-      `<td class="lbl">${e(i.label)}</td>` +
-      `<td class="dt">${i.status === 'pending' ? '<span class="muted">checking\u2026</span>' : e(i.detail)}</td>` +
-      `<td class="ln">${i.link && i.status !== 'pending' ? `<button class="row-link" data-jump="${e(i.link)}">detail \u2192</button>` : ''}</td></tr>`
-    ).join('') + '</tbody></table>');
-  }).join('');
+  let attention = '';
+  if (shownProblems.length) attention = attentionHtml(shownProblems, e);
+  else if (!section) attention = '<div class="summary green">✓ Nothing failed and nothing is warning — see the detail below.</div>';
+  else if (problems.length) attention = `<div class="summary grey">✓ Nothing to fix in ${e(section)} — ${problems.length} to look at elsewhere${elsewhere === problems.length ? '' : ' (see the other categories above)'}.` + '</div>';
+  else attention = `<div class="summary green">✓ Nothing to fix in ${e(section)}.</div>`;
 
-  const records = raw.records;
-  const rawBits = ['A', 'AAAA', 'CNAME', 'NS', 'MX', 'TXT', 'CAA', 'SOA'].filter((t) => (records[t] || []).length)
-    .map((t) => `<tr><td>${t}</td><td>${records[t].map((v) => e(typeof v === 'object' ? `${v.prio} ${v.host}` : v)).join('<br>')}</td></tr>`)
-    .join('');
-  const appendix = rawBits
-    ? window.card('Records seen', `<table class="headers-table"><thead><tr><th>Type</th><th>Value</th></tr></thead><tbody>${rawBits}</tbody></table>`)
-    : '';
+  let bodies = '';
+  if (section) {
+    bodies = shown.length ? window.card(section, `<table class="report-table"><tbody>${rowsHtml(shown, e)}</tbody></table>`) : '';
+  } else {
+    bodies = OV_SECTION_ORDER.map((name) => {
+      const rows = rep.items.filter((i) => i.section === name);
+      return rows.length ? window.card(name, `<table class="report-table"><tbody>${rowsHtml(rows, e)}</tbody></table>`) : '';
+    }).join('');
+  }
 
-  return head + attention + bodies + appendix +
+  let appendix = '';
+  if (!section) {
+    const records = raw.records;
+    const rawBits = ['A', 'AAAA', 'CNAME', 'NS', 'MX', 'TXT', 'CAA', 'SOA'].filter((t) => (records[t] || []).length)
+      .map((t) => `<tr><td>${t}</td><td>${records[t].map((v) => e(typeof v === 'object' ? `${v.prio} ${v.host}` : v)).join('<br>')}</td></tr>`)
+      .join('');
+    if (rawBits) appendix = window.card('Records seen', `<table class="headers-table"><thead><tr><th>Type</th><th>Value</th></tr></thead><tbody>${rawBits}</tbody></table>`);
+  }
+
+  return intro + head + attention + bodies + appendix +
     '<div class="btn-row"><button class="copy-btn" style="position:static" data-copy="' +
     e(window.reportToText(rep)) + '">copy report</button></div>';
 }
 
-async function runOverview(query, panel) {
-  const run = ++overviewRun;
-  const host = window.hostFromInput(query);
-  if (window.isIP(host)) {
-    window.showError(panel, 'Enter a domain name, not an IP — this report walks a whole zone. The DNS, Network, and Cloud tabs take an address.');
-    return;
-  }
-  if (!window.isDomain(host)) {
-    window.showError(panel, 'Enter a domain name, e.g. example.com');
-    return;
-  }
-  const domain = window.reportDomain(host);
-  const raw = {
-    domain, now: Date.now(), records: {}, dkim: {}, ptr: {}, failed: [],
-    pending: ['geo', 'rbl', 'http', 'tls', 'whois', 'spfwalk'],
-  };
-  const out = ensureOverviewSkeleton(panel);
-  const alive = () => run === overviewRun;
-  const paint = () => { if (alive()) window.showResult(out, renderReport(raw)); };
-  const finish = (src) => { raw.pending = raw.pending.filter((s) => s !== src); };
+// Dots on the category buttons so filtering never hides a failure.
+function paintDots(rep) {
+  const nav = document.getElementById('tab-overview');
+  if (!nav || !nav.querySelectorAll) return;
+  nav.querySelectorAll('.subtab').forEach((btn) => {
+    const sec = OV_SECTION_BY_SUB[btn.dataset.subtab];
+    const rows = sec ? rep.items.filter((i) => i.section === sec) : rep.items;
+    const bad = rows.some((i) => i.status === 'bad');
+    const warn = !bad && rows.some((i) => i.status === 'warn');
+    btn.classList.toggle('has-fail', bad);
+    btn.classList.toggle('has-warn', warn);
+  });
+}
+
+// Repaint every panel that has been opened this session — only the visible one
+// matters, but keeping them in sync means switching subtabs shows current data.
+function paint() {
+  if (!ovState) return;
+  const rep = window.domainReport(ovState.raw);
+  paintDots(rep);
+  ovState.panels.forEach((panel, sub) => window.showResult(panel, reportHtml(ovState.raw, sub)));
+}
+
+// ---------- collection ----------
+
+function collect(st) {
+  const { domain, raw } = st;
+  const alive = () => st.run === overviewRun;
+  const repaint = () => { if (alive()) paint(); };
   const failKey = (k) => { if (raw.failed.indexOf(k) < 0) raw.failed.push(k); };
-  paint();
 
   // ---- wave 1: the zone itself, all in parallel ----
   const q = (name, type, key) => ovDns(name, type).then((r) => {
@@ -182,22 +207,22 @@ async function runOverview(query, panel) {
     if (!r.ok) failKey(key);
     if (r.nx) raw.nx = true;
     if (key === 'A') raw.ad = r.ad;
-    paint();
+    repaint();
   });
 
-  await Promise.all([
+  Promise.all([
     ...OV_TYPES.map((t) => q(domain, t, t)),
     ovDns(`_dmarc.${domain}`, 'TXT').then((r) => {
       if (!alive()) return;
       raw.dmarc = r.value;
       if (!r.ok) failKey('_dmarc');
-      paint();
+      repaint();
     }),
     ...window.DKIM_SELECTORS.map((sel) => ovDns(`${sel}._domainkey.${domain}`, 'TXT').then((r) => {
       if (!alive()) return;
       raw.dkim[sel] = r.value;
       if (!r.ok) failKey('dkim');
-      paint();
+      repaint();
     })),
     Promise.all(OV_PROP_RESOLVERS.map((key) =>
       window.dohQuery(domain, 'A', key)
@@ -211,13 +236,20 @@ async function runOverview(query, panel) {
       .then((results) => {
         if (!alive()) return;
         raw.propagation = { results };
-        paint();
+        repaint();
       }),
-  ]);
+  ]).then(() => {
+    if (!alive()) return;
+    wave2(st);
+  }).catch(() => { if (alive()) wave2(st); });
+}
 
-  if (!alive()) return;
+function wave2(st) {
+  const { domain, host, raw } = st;
+  const alive = () => st.run === overviewRun;
+  const repaint = () => { if (alive()) paint(); };
+  const finish = (src) => { raw.pending = raw.pending.filter((s) => s !== src); };
 
-  // ---- wave 2: the things that need an address from wave 1 ----
   const ips = (raw.records.A || []).filter((x) => window.isIPv4(x) && !window.isPrivateIP(x));
   const mxHosts = (raw.records.MX || []).map((m) => m.host).filter(Boolean).slice(0, 4);
 
@@ -235,20 +267,21 @@ async function runOverview(query, panel) {
       raw.spfWalk = node.error
         ? { error: `SPF walk stopped: ${node.error}.` }
         : { total: ctx.lookups, voids: ctx.voids, root: rootCount, dead: countStatuses(node, ['dead', 'error']) };
-      paint();
+      repaint();
     }).catch(() => {
       if (!alive()) return;
       finish('spfwalk');
       raw.spfWalk = { error: 'The SPF include walk did not complete.' };
-      paint();
+      repaint();
     });
   } else {
     finish('spfwalk');
+    repaint();
   }
 
   // Reverse DNS of the web IP and of each MX host.
   [...ips.slice(0, 2), ...mxHosts].forEach((target) => {
-    ovPtr(target).then((v) => { if (alive()) { raw.ptr[target] = v; paint(); } });
+    ovPtr(target).then((v) => { if (alive()) { raw.ptr[target] = v; repaint(); } });
   });
 
   // Who owns the address (ASN / org / rough location).
@@ -261,46 +294,45 @@ async function runOverview(query, panel) {
         raw.geo = g && g.success !== false
           ? { asn: c.asn, org: c.org, isp: c.isp, city: g.city, country: g.country_code }
           : null;
-        finish('geo'); paint();
+        finish('geo'); repaint();
       })
-      .catch(() => { if (alive()) { finish('geo'); paint(); } });
+      .catch(() => { if (alive()) { finish('geo'); repaint(); } });
   } else {
     finish('geo');
+    repaint();
   }
 
   // Blacklists — the web IP if we have one, otherwise a mail exchanger's.
-  const rblFrom = async () => {
-    if (ips[0]) return ips[0];
-    for (const m of mxHosts) {
-      const a = await ovDns(m, 'A');
-      const ip = (a.value || []).find((x) => window.isIPv4(x) && !window.isPrivateIP(x));
-      if (ip) return ip;
+  (async () => {
+    let ip = ips[0] || null;
+    if (!ip) {
+      for (const m of mxHosts) {
+        const a = await ovDns(m, 'A');
+        const found = (a.value || []).find((x) => window.isIPv4(x) && !window.isPrivateIP(x));
+        if (found) { ip = found; break; }
+      }
     }
-    return null;
-  };
-  rblFrom().then((ip) => {
     if (!alive()) return;
-    if (!ip) { finish('rbl'); raw.rbl = { error: 'No public IPv4 address to check against the blacklists.' }; paint(); return; }
-    ovJson(`/api/rbl?ip=${encodeURIComponent(ip)}`, 'Blacklist check failed').then((data) => {
-      if (!alive()) return;
-      finish('rbl');
-      raw.rbl = data.error ? { error: data.error } : { ip, results: data.results || [] };
-      paint();
-    });
-  });
+    if (!ip) { finish('rbl'); raw.rbl = { error: 'No public IPv4 address to check against the blacklists.' }; repaint(); return; }
+    const data = await ovJson(`/api/rbl?ip=${encodeURIComponent(ip)}`, 'Blacklist check failed');
+    if (!alive()) return;
+    finish('rbl');
+    raw.rbl = data.error ? { error: data.error } : { ip, results: data.results || [] };
+    repaint();
+  })();
 
   // Web server: headers/redirect chain, then TLS.
   ovHttp(host).then((data) => {
     if (!alive()) return;
     finish('http');
     raw.http = data;
-    paint();
+    repaint();
   });
   ovJson(`/api/tls?host=${encodeURIComponent(host)}`, 'TLS check failed').then((data) => {
     if (!alive()) return;
     finish('tls');
     raw.tls = data.error ? { error: data.error } : { grade: data.grade, issues: data.issues || [] };
-    paint();
+    repaint();
   });
 
   // Registration via RDAP. TLDs without RDAP come back as raw whois text.
@@ -310,8 +342,45 @@ async function runOverview(query, panel) {
     raw.whois = data.raw
       ? { error: 'This registry publishes no structured RDAP data, so expiry and status were not checked.' }
       : data.error ? { error: data.error } : data;
-    paint();
+    repaint();
   });
 }
 
-window.registerRunner('overview', 'main', runOverview);
+// ---------- entry point ----------
+
+// Every subtab runs through this: validate the input, reuse (or start) the
+// collection for that domain, then paint this panel from the shared state.
+async function runOverviewSub(sub, query, panel) {
+  const host = window.hostFromInput(query);
+  if (window.isIP(host)) {
+    window.showError(panel, 'Enter a domain name, not an IP — this report walks a whole zone. The DNS, Network, and Cloud tabs take an address.');
+    return;
+  }
+  if (!window.isDomain(host)) {
+    window.showError(panel, 'Enter a domain name, e.g. example.com');
+    return;
+  }
+  const domain = window.reportDomain(host);
+  if (!ovState || ovState.domain !== domain || ovState.host !== host) {
+    const raw = {
+      domain, now: Date.now(), records: {}, dkim: {}, ptr: {}, failed: [],
+      pending: ['geo', 'rbl', 'http', 'tls', 'whois', 'spfwalk'],
+    };
+    ovState = { domain, host, raw, panels: new Map(), run: ++overviewRun };
+    collect(ovState);
+  }
+  if (!panel.dataset.ovWired) {
+    // Deep link into the detail tab for whatever the row is about.
+    panel.addEventListener('click', (ev) => {
+      const btn = ev.target && ev.target.closest ? ev.target.closest('[data-jump]') : null;
+      if (btn) window.jumpTo(btn.getAttribute('data-jump'));
+    });
+    panel.dataset.ovWired = '1';
+  }
+  ovState.panels.set(sub, panel);
+  paint();
+}
+
+Object.keys(OV_SECTION_BY_SUB).forEach((sub) => {
+  window.registerRunner('overview', sub, (query, panel) => runOverviewSub(sub, query, panel));
+});
