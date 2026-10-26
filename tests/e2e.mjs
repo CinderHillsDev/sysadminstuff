@@ -60,7 +60,7 @@ async function main() {
   {
     const res = await fetch(BASE + '/');
     const html = await res.text();
-    const subs = ['all', 'dns', 'email', 'web', 'reg'];
+    const subs = ['all', 'attention', 'dns', 'email', 'web', 'reg'];
     ok('overview subtabs present', subs.every((s) => html.includes(`data-subtab="${s}"`)));
     ok('overview subpanels present', subs.every((s) => html.includes(`id="panel-overview-${s}"`)));
   }

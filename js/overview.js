@@ -19,7 +19,18 @@ const OV_PROP_RESOLVERS = ['cloudflare', 'google', 'dnssb'];
 
 // Subtab -> the report section it shows (null = all of them). Keeping this in
 // the URL (?tab=overview&sub=email&q=…) makes a single category shareable.
-const OV_SECTION_BY_SUB = { all: null, dns: 'DNS', email: 'Email', web: 'Web', reg: 'Registration' };
+// Subtab -> what it shows: `section` filters to one category, `problemsOnly`
+// keeps just FAIL/WARN rows. Every view renders from the single collected run,
+// so switching costs no lookups and one view is linkable
+// (?tab=overview&sub=attention&q=…).
+const OV_VIEWS = {
+  all: { section: null, problemsOnly: false },
+  attention: { section: null, problemsOnly: true },
+  dns: { section: 'DNS', problemsOnly: false },
+  email: { section: 'Email', problemsOnly: false },
+  web: { section: 'Web', problemsOnly: false },
+  reg: { section: 'Registration', problemsOnly: false },
+};
 const OV_SECTION_ORDER = ['DNS', 'Email', 'Web', 'Registration'];
 
 // The one collected report, shared by every subtab panel. Bumped (with a new
@@ -113,20 +124,32 @@ function attentionHtml(items, e) {
     '</li>').join('') + '</ul>');
 }
 
+function isProblem(i) { return i.status === 'bad' || i.status === 'warn'; }
+
+// Group rows into one card per category, in a stable order.
+function sectionsHtml(items, e) {
+  return OV_SECTION_ORDER.map((name) => {
+    const rows = items.filter((i) => i.section === name);
+    return rows.length ? window.card(name, `<table class="report-table"><tbody>${rowsHtml(rows, e)}</tbody></table>`) : '';
+  }).join('');
+}
+
 function reportHtml(raw, sub) {
   const rep = window.domainReport(raw);
   const e = window.escapeHtml;
-  const section = Object.prototype.hasOwnProperty.call(OV_SECTION_BY_SUB, sub) ? OV_SECTION_BY_SUB[sub] : null;
+  const view = OV_VIEWS[sub] || OV_VIEWS.all;
 
   if (!rep.judged && !rep.items.some((i) => i.status === 'pending')) {
     return '<div class="summary red">Nothing could be checked. Every lookup failed — this network may be ' +
       'blocking DNS-over-HTTPS and the site&#39;s own resolver endpoints.</div>';
   }
 
-  const problems = rep.items.filter((i) => i.status === 'bad' || i.status === 'warn');
-  const shown = section ? rep.items.filter((i) => i.section === section) : rep.items;
-  const shownProblems = shown.filter((i) => i.status === 'bad' || i.status === 'warn');
-  const elsewhere = problems.length - shownProblems.length;
+  const problems = rep.items.filter(isProblem);
+  const pending = rep.items.filter((i) => i.status === 'pending').length;
+  let shown = view.section ? rep.items.filter((i) => i.section === view.section) : rep.items;
+  if (view.problemsOnly) shown = shown.filter(isProblem);
+  const shownProblems = shown.filter(isProblem);
+  const scopeName = view.section ? e(view.section) : 'this domain';
 
   const head =
     `<div class="report-head"><div class="grade ${rep.grade}">${rep.grade}</div><div>` +
@@ -134,28 +157,31 @@ function reportHtml(raw, sub) {
     `<div class="muted">${e(raw.domain)} · ${rep.counts.ok} pass · ${rep.counts.warn} warn · ${rep.counts.bad} fail` +
     (rep.counts.pending ? ` · ${rep.counts.pending} still running` : '') + '</div></div></div>';
 
-  const intro = section ? '' :
+  const intro = view.section || view.problemsOnly ? '' :
     '<div class="note">One pass over the domain: DNS and DNSSEC, mail authentication, the web server, and ' +
-    'the registration. Pick a category above to see fewer rows; every row links to the tool that explains it.</div>';
+    'the registration. Attention lists only what needs a look; every row links to the tool that explains it.</div>';
 
   let attention = '';
-  if (shownProblems.length) attention = attentionHtml(shownProblems, e);
-  else if (!section) attention = '<div class="summary green">✓ Nothing failed and nothing is warning — see the detail below.</div>';
-  else if (problems.length) attention = `<div class="summary grey">✓ Nothing to fix in ${e(section)} — ${problems.length} to look at elsewhere${elsewhere === problems.length ? '' : ' (see the other categories above)'}.` + '</div>';
-  else attention = `<div class="summary green">✓ Nothing to fix in ${e(section)}.</div>`;
+  if (view.problemsOnly) {
+    // In this view the table below *is* the punch list, so no card on top of it.
+    if (shown.length) {
+      const bad = shown.filter((i) => i.status === 'bad').length;
+      attention = `<div class="summary ${bad ? 'red' : 'yellow'}">${shown.length} item${shown.length === 1 ? '' : 's'} to look at` +
+        (bad ? ` — ${bad} failing` : '') + ', grouped by category below.</div>';
+    } else if (pending) {
+      attention = `<div class="summary grey">Nothing flagged yet — ${pending} check${pending === 1 ? '' : 's'} still running.</div>`;
+    } else {
+      attention = `<div class="summary green">✓ Nothing to fix — ${rep.counts.ok} checks passed on ${scopeName}.</div>`;
+    }
+  } else if (shownProblems.length) attention = attentionHtml(shownProblems, e);
+  else if (!view.section) attention = '<div class="summary green">✓ Nothing failed and nothing is warning — see the detail below.</div>';
+  else if (problems.length) attention = `<div class="summary grey">✓ Nothing to fix in ${scopeName} — ${problems.length} to look at in the other categories.</div>`;
+  else attention = `<div class="summary green">✓ Nothing to fix in ${scopeName}.</div>`;
 
-  let bodies = '';
-  if (section) {
-    bodies = shown.length ? window.card(section, `<table class="report-table"><tbody>${rowsHtml(shown, e)}</tbody></table>`) : '';
-  } else {
-    bodies = OV_SECTION_ORDER.map((name) => {
-      const rows = rep.items.filter((i) => i.section === name);
-      return rows.length ? window.card(name, `<table class="report-table"><tbody>${rowsHtml(rows, e)}</tbody></table>`) : '';
-    }).join('');
-  }
+  const bodies = sectionsHtml(shown, e);
 
   let appendix = '';
-  if (!section) {
+  if (!view.section && !view.problemsOnly) {
     const records = raw.records;
     const rawBits = ['A', 'AAAA', 'CNAME', 'NS', 'MX', 'TXT', 'CAA', 'SOA'].filter((t) => (records[t] || []).length)
       .map((t) => `<tr><td>${t}</td><td>${records[t].map((v) => e(typeof v === 'object' ? `${v.prio} ${v.host}` : v)).join('<br>')}</td></tr>`)
@@ -173,8 +199,10 @@ function paintDots(rep) {
   const nav = document.getElementById('tab-overview');
   if (!nav || !nav.querySelectorAll) return;
   nav.querySelectorAll('.subtab').forEach((btn) => {
-    const sec = OV_SECTION_BY_SUB[btn.dataset.subtab];
-    const rows = sec ? rep.items.filter((i) => i.section === sec) : rep.items;
+    const view = OV_VIEWS[btn.dataset.subtab];
+    if (!view) return;
+    let rows = view.section ? rep.items.filter((i) => i.section === view.section) : rep.items;
+    if (view.problemsOnly) rows = rows.filter(isProblem);
     const bad = rows.some((i) => i.status === 'bad');
     const warn = !bad && rows.some((i) => i.status === 'warn');
     btn.classList.toggle('has-fail', bad);
@@ -381,6 +409,6 @@ async function runOverviewSub(sub, query, panel) {
   paint();
 }
 
-Object.keys(OV_SECTION_BY_SUB).forEach((sub) => {
+Object.keys(OV_VIEWS).forEach((sub) => {
   window.registerRunner('overview', sub, (query, panel) => runOverviewSub(sub, query, panel));
 });
