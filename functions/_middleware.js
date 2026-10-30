@@ -34,6 +34,10 @@ export async function onRequest(context) {
   const { request, next } = context;
   const url = new URL(request.url);
 
+  // Repo-local diagnostics (mailcheck-probe) live in the tree, but Pages would
+  // happily serve them as static assets. Never expose them.
+  if (url.pathname.startsWith('/mailcheck-probe/')) return new Response('Not found', { status: 404 });
+
   // Only police the API surface; static assets pass straight through.
   if (!url.pathname.startsWith('/api/')) return next();
 

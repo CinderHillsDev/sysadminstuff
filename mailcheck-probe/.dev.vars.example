@@ -1,0 +1,2 @@
+# wrangler secret put PROBE_KEY is the real way; this is for `wrangler dev` locally.
+PROBE_KEY = "replace-with-a-long-random-string"

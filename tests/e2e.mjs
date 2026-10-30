@@ -54,6 +54,11 @@ async function main() {
     const res = await fetch(BASE + '/js/overview.js');
     ok('GET /js/overview.js', res.status === 200);
   }
+  // Repo-local diagnostics must not be served as static assets by Pages.
+  {
+    const res = await fetch(BASE + '/mailcheck-probe/src/index.js');
+    ok('GET /mailcheck-probe/* is blocked (404)', res.status === 404, `status ${res.status}`);
+  }
   // The Overview category subtabs are a filter over one collected run, and
   // overview.js maps sub -> section by these exact ids; a rename in either
   // place would leave a blank panel, so pin them here.

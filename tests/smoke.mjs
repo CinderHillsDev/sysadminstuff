@@ -623,6 +623,76 @@ async function runTests() {
   eq('failed walk is unknown not failed', spfRow({ error: 'SPF walk stopped: DNS lookup failed' }).status, 'info');
   eq('walk still running is pending', spfRow(undefined, { pending: ['spfwalk'] }).status, 'pending');
 
+  // ================= mailcheck-probe/parse.mjs (header forensics) =================
+  // Pure logic that decides the shape of the "send us an email" feature, so it is
+  // tested even though the Worker around it is disposable.
+  const probe = await import('../mailcheck-probe/parse.mjs');
+
+  eq('ipsInText picks the bracketed address', probe.ipsInText('by mx (mail.example.org [198.51.100.7])'), ['198.51.100.7']);
+  eq('ipsInText rejects bogus octets', probe.ipsInText('id 999.1.1.1 for x'), []);
+  eq('ipsInText dedupes', probe.ipsInText('198.51.100.7 and 198.51.100.7').length, 1);
+
+  const hop = probe.parseReceived('from mail.example.org (mail.example.org. [198.51.100.7]) by mx01.mail.cloudflare.net with ESMTP id 44ab for <t@mail.example.com>; Mon, 1 Jan 2024 10:00:00 +0000');
+  eq('parseReceived by-host', hop.by, 'mx01.mail.cloudflare.net');
+  eq('parseReceived for-address', hop.for, 't@mail.example.com');
+  eq('parseReceived protocol', hop.with, 'ESMTP');
+  eq('parseReceived comment ip', hop.ips, ['198.51.100.7']);
+
+  // Headers joins repeated headers into one value, so the Received chain has to
+  // be rebuilt — without shredding the "; Mon, 1 Jan 2024" dates inside it.
+  eq('splitList rebuilds a joined chain', probe.splitList('from a (a [1.2.3.4]) by x with SMTP id 1, from b (b [5.6.7.8]) by y', 'from|by|with|id|for').length, 2);
+  eq('splitList keeps dates intact', /; Mon, 1 Jan 2024/.test(probe.splitList('from a by x; Mon, 1 Jan 2024 10:00:00 +0000', 'from|by')[0]), true);
+  eq('splitList passes arrays through', probe.splitList(['a', 'b'], 'from').length, 2);
+  eq('splitList empty', probe.splitList('', 'from'), []);
+  const folded = probe.summarizeHeaders({
+    Received: 'from a.google.com (a.google.com. [209.85.220.41]) by mx.google.com with SMTPS id 7 for <x@ex.net>; Tue, 2 Jan 2024 04:00:00 +0000, from client (host [198.51.100.9]) by mx01.mail.cloudflare.net with ESMTP id 44',
+  });
+  eq('summary splits a two-hop chain', folded.hopCount, 2);
+  eq('summary flags folded headers', folded.foldedFromSingleValue, true);
+  eq('summary finds both hop addresses', folded.externalIps.sort(), ['198.51.100.9', '209.85.220.41']);
+
+  eq('dkimSignatures tags', probe.dkimSignatures(['v=1; a=rsa-sha256; c=relaxed/simple; d=gmail.com; s=20230601; t=1700000000; bh=XYZ=;'])[0],
+    { d: 'gmail.com', s: '20230601', a: 'rsa-sha256', bh: 'XYZ=', t: '1700000000' });
+  eq('dkimSignatures drops junk', probe.dkimSignatures(['not a signature']).length, 0);
+  eq('authResults mech pairs', probe.authResults('mx.example.net; spf=pass smtp.mailfrom=gmail.com; dkim=pass header.d=gmail.com; dmarc=pass p=quarantine'),
+    { spf: 'pass', dkim: 'pass', dmarc: 'pass' });
+
+  const gmailStyle = probe.summarizeHeaders({
+    'Authentication-Results': 'mx.example.net; spf=pass smtp.mailfrom=gmail.com; dkim=pass header.d=gmail.com',
+    'DKIM-Signature': 'v=1; a=rsa-sha256; d=gmail.com; s=20230601; bh=XYZ=;',
+    Received: ['from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41]) by relay.example.net with SMTPS id 9 for <t@mail.example.net>; Tue, 2 Jan 2024 04:00:00 +0000'],
+    'Return-Path': '<bounces@googlemail.com>',
+  });
+  eq('summary finds the external ip', gmailStyle.externalIps, ['209.85.220.41']);
+  eq('summary sees Authentication-Results', gmailStyle.authHeadersSeen.includes('authentication-results'), true);
+  eq('summary parses the verdict', gmailStyle.authenticationResults.dkim, 'pass');
+  eq('summary says no Cloudflare hop', gmailStyle.cloudflareHopSeen, false);
+  eq('summary keeps the envelope', gmailStyle.envelopeHints.returnPath, '<bounces@googlemail.com>');
+  eq('summary counts one dkim sig', gmailStyle.dkimSignatures.length, 1);
+
+  const cfStyle = probe.summarizeHeaders({
+    Received: ['from mail.example.org (mail.example.org [198.51.100.7]) by mx01.mail.cloudflare.net with ESMTP id 44 for <t@mail.example.net>',
+      'from client-host (198.51.100.9) by mail.example.org with SMTP id A1'],
+    'ARC-Seal': 'i=1; a=rsa-sha256; s=arcselector; d=mail.cloudflare.net',
+  });
+  eq('summary sees the Cloudflare hop', cfStyle.cloudflareHopSeen, true);
+  eq('summary collects every address', cfStyle.externalIps.sort(), ['198.51.100.7', '198.51.100.9']);
+  eq('summary finds ARC set numbers', cfStyle.arcSealSets, [1]);
+
+  const conclusions = probe.probeConclusions({
+    summary: cfStyle,
+    body: { bytes: 1234, sha256: 'a'.repeat(64) },
+  });
+  const byKey = conclusions.reduce((m, c) => { m[c.key] = c; return m; }, {});
+  eq('conclusion: connecting ip', byKey.connectingIp.ok, true);
+  eq('conclusion: cloudflare hop', byKey.cloudflareHop.ok, true);
+  eq('conclusion: auth results missing is a no', byKey.authResultsHeader.ok, false);
+  eq('conclusion: body hashed', byKey.bodyAccessible.ok, true);
+  eq('conclusion count', conclusions.length, 5);
+  const bigMail = probe.probeConclusions({ summary: gmailStyle, body: { bytes: 9e6, skipped: 'over size cap' } });
+  eq('conclusion: skipped body is not accessible', bigMail.find((c) => c.key === 'bodyAccessible').ok, false);
+  check('conclusion wording is human readable', /blacklist-check|Received/.test(bigMail.map((c) => c.text).join(' ')));
+
   // ---- dns wire format (trace) ----
   const wire = await import('../lib/dnswire.mjs');
   const q = wire.buildQuery('example.com', 'A', 0xabcd);

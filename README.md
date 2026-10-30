@@ -89,6 +89,23 @@ The page makes **no external asset requests at all** — the IBM Plex fonts are 
 
 ---
 
+## Investigating an email someone sent us (planned)
+
+A "forward this message and we'll check it" tool needs inbound mail, which Cloudflare
+provides free: **Email Routing is unlimited on Workers Free** — it is *sending* to arbitrary
+recipients that requires Paid. Two constraints shape the design:
+
+- A routing rule's destination must be a Worker with an `email()` handler. Pages Functions
+  have no email handler, so this is a second, tiny Worker; it shares the same free
+  100,000-invocation allowance and writes to a KV namespace both deployables bind.
+- Free-plan handlers get **10 ms CPU per invocation** and fail with `EXCEEDED_CPU` past it,
+  so the handler may parse headers and hash a body — nothing heavier.
+
+`mailcheck-probe/` is the throwaway Worker that settles the open question before any of that
+is built: whether the connecting IP and any `Authentication-Results` header actually reach
+the handler. Its README has the ten-minute setup (use a **subdomain as its own zone** so the
+apex's null-MX / `v=spf1 -all` posture stays intact) and the decision table for the output.
+
 ## Run locally
 
 The static files and the Pages Functions run together under Wrangler:
@@ -150,6 +167,7 @@ css/style.css
 js/    core.js app.js overview.js dns.js email.js web.js network.js cert.js whois.js myip.js m365.js cloud.js utils.js tools.js wordlist.js
 lib/   parse.mjs
 functions/  _middleware.js  api/  whois.js rbl.js tls.js headers.js asn.js tenant.js myip.js dns.js
+mailcheck-probe/   (temporary diagnostic Worker — not part of the site, not served)
 tests/ smoke.mjs e2e.mjs README.md
 ```
 

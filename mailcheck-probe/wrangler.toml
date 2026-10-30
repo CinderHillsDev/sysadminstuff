@@ -1,0 +1,16 @@
+name = "mailcheck-probe"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# The probe needs an HTTP surface only so you can read the collected record back.
+# If workers.dev is disabled on your account, deploy and create a route on a
+# throwaway hostname instead — never on sysadminstuff.net itself.
+workers_dev = true
+
+# Create it once:  wrangler kv namespace create PROBE
+# then paste the returned id below.
+[[kv_namespaces]]
+binding = "PROBE"
+id = "REPLACE_WITH_ID"
+
+# PROBE_KEY is a secret, kept out of this file:  wrangler secret put PROBE_KEY
