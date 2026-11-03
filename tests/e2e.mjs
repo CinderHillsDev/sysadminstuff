@@ -17,9 +17,13 @@ function ok(name, cond, detail) {
   if (cond) { passed++; console.log('  ✓ ' + name); }
   else { failures.push(`${name}${detail ? ' — ' + detail : ''}`); console.log('  ✗ ' + name + (detail ? ' — ' + detail : '')); }
 }
-// For checks that depend on a live third-party API: an upstream 403/429/5xx (or
-// a network block) means "their service, not our bug" — record it as a skip.
-function isUpstreamDown(status) { return status === 0 || status === 403 || status === 429 || status >= 500; }
+// For checks that depend on a live third-party API: an upstream 403/424/429/5xx (or
+// a network block) means "their service, not our bug" — record it as a skip. 424 is
+// in the list because we only ever produce it from our own mapping of registry
+// trouble (rdapFailure() and whois.js answer 424 precisely so Cloudflare doesn't
+// swallow the body), never for a client error — so skipping on it can't hide a
+// broken request.
+function isUpstreamDown(status) { return status === 0 || status === 403 || status === 424 || status === 429 || status >= 500; }
 function okUpstream(name, status, cond, detail) {
   if (isUpstreamDown(status)) { skipped++; console.log(`  ~ ${name} — SKIP (upstream status ${status})`); return; }
   ok(name, cond, detail);
