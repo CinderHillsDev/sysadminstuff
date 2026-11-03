@@ -40,6 +40,8 @@ Then in the dashboard:
 2. **Compute → Email Service → Email Routing → Onboard Domain** for it. MX/SPF/DKIM TXT
    records go into *that* zone, not the apex one.
 3. Turn on the **catch-all rule**, action = *Send to a Worker* → `mailcheck-probe`.
+   Deploy the Worker first — the dashboard only lists Workers that already exist, and a
+   rule with no destination stays disabled.
 4. Wait for the MX to resolve: `dig MX mailcheck.<your-root-domain>`.
 
 ## Run the three tests that matter
@@ -57,6 +59,17 @@ KEY=*** 'echo -n "Paste the PROBE_KEY you set: " >/dev/null; read -rs K && echo 
 curl -s "https://mailcheck-probe.<subdomain>.workers.dev/last?key=$KEY" | less
 curl -s ".../last?key=$KEY&full=1"   # every header value, to see exactly what arrived
 ```
+
+`p:latest` is overwritten by every message, so send the three tests to **distinct token
+addresses** to keep all of them side by side — a local part like `check+deadbeef@` is stored
+under its own key as well:
+
+```sh
+curl -s ".../last?key=$KEY&to=deadbeef"
+```
+
+Use a different hex token per test: `check+aaaa1111@` (Gmail), `check+bbbb2222@` (direct
+SMTP), `check+cccc3333@` (forward).
 
 ## How to read `conclusions`
 
