@@ -5,8 +5,10 @@
 //   - OpenID Connect metadata  -> tenant GUID, region + sub-scope, cloud instance
 //   - GetUserRealm             -> brand name, Managed/Federated (ADFS) status
 //   - GetFederationInformation -> other domains in the same tenant (best-effort)
+//   - OIDC metadata per candidate <label>.onmicrosoft.com -> the tenant's initial
+//     domain, kept only when its issuer GUID proves it is *this* tenant
 
-import { classifyTenantEnvironment, extractTenantId, parseTenantDomains } from '../../lib/parse.mjs';
+import { classifyTenantEnvironment, extractTenantId, parseTenantDomains, initialDomainCandidates, pickDefaultDomain } from '../../lib/parse.mjs';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -69,6 +71,21 @@ export async function onRequest(context) {
   let domains = [];
   try { domains = await getTenantDomains(domain, autodiscoverHost); } catch (e) { /* best-effort */ }
 
+  // 4. The initial "<tenant>.onmicrosoft.com" domain. Microsoft does not expose it,
+  //    so propose a handful of candidates and keep only the one whose issuer GUID
+  //    matches the tenant identified above. Anything else stays unnamed.
+  let defaultDomain = '';
+  const candidates = tenantId ? initialDomainCandidates({ domain, domains, brandName }) : [];
+  if (candidates.length) {
+    const results = await Promise.all(candidates.map((candidate) =>
+      fetch(`https://${loginHost}/${encodeURIComponent(candidate)}/v2.0/.well-known/openid-configuration`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => ({ candidate, tenantId: extractTenantId(j && j.issuer) }))
+        .catch(() => ({ candidate, tenantId: '' }))
+    ));
+    defaultDomain = pickDefaultDomain(results, tenantId);
+  }
+
   return json({
     domain,
     isTenant: true,
@@ -82,6 +99,7 @@ export async function onRequest(context) {
     cloudInstance,
     domains,
     domainCount: domains.length,
+    defaultDomain,        // '' when no candidate confirmed — deliberately never guessed
   });
 }
 

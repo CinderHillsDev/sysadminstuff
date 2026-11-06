@@ -48,15 +48,22 @@ async function runTenant(query, panel) {
       ['Cloud instance', window.escapeHtml(d.cloudInstance || '—')],
       ['Region scope', window.escapeHtml(d.regionScope || '—') + (d.subScope ? ` / ${window.escapeHtml(d.subScope)}` : '')],
     );
+    // The initial domain is only ever shown when a candidate's issuer GUID matched
+    // this tenant, so the wording can be plain — and its absence has to be explicit,
+    // otherwise an empty row reads as "none" rather than "unknown".
+    rows.push(['Initial domain', d.defaultDomain
+      ? `<code>${window.escapeHtml(d.defaultDomain)}</code> <span class="muted">· confirmed by tenant ID</span>`
+      : '<span class="muted">not published — Microsoft does not expose it, and no candidate resolved to this tenant</span>']);
     const tenantCard = window.card(`Tenant — ${d.domain}`,
       `<table><tbody>${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</tbody></table>`,
       d.tenantId || undefined);
 
     let domainsCard = '';
-    if (d.domains && d.domains.length) {
-      const list = d.domains.map((x) => window.escapeHtml(x)).join('\n');
-      domainsCard = window.card(`Tenant domains (${d.domainCount != null ? d.domainCount : d.domains.length})`,
-        `<pre class="raw">${d.domains.map((x) => window.escapeHtml(x)).join('<br>')}</pre>`,
+    const allDomains = (d.domains || []).concat(d.defaultDomain && !(d.domains || []).includes(d.defaultDomain) ? [d.defaultDomain] : []);
+    if (allDomains.length) {
+      const list = allDomains.map((x) => window.escapeHtml(x)).join('\n');
+      domainsCard = window.card(`Tenant domains (${d.domainCount != null ? d.domainCount : d.domains.length}${d.defaultDomain && !(d.domains || []).includes(d.defaultDomain) ? ' + initial' : ''})`,
+        `<pre class="raw">${allDomains.map((x) => window.escapeHtml(x)).join('<br>')}</pre>`,
         list);
     }
 

@@ -21,6 +21,7 @@ Guidance for working in this repo.
 - Client-side-only tools (JWT, Base64, URL Encode, Subnet) must never make network calls and must show a visible "runs in your browser" note.
 - Frontend modules attach their run functions through `registerRunner`; don't call runners directly.
 - The RFC 7208 SPF limits (`SPF_DNS_LOOKUP_LIMIT`, `SPF_VOID_LOOKUP_LIMIT`) are defined once in `core.js` and read by both the SPF Lookups subtab and the Overview report. The 10-lookup cap is a *tree* limit — counting only the root record's mechanisms understates it, so grade it from `walkSpf`.
+- The M365 **initial (`*.onmicrosoft.com`) domain is never guessed**. Microsoft doesn't expose it, so `tenant.js` proposes candidates (`initialDomainCandidates` in `lib/parse.mjs`) and keeps only one whose OIDC issuer GUID equals the resolved tenant (`pickDefaultDomain`). Leave `defaultDomain` empty otherwise — plausible names like `atlassian.onmicrosoft.com` belong to *other real tenants*.
 - Blacklist answers are interpreted by `rblVerdict()` in `lib/parse.mjs` — for the Spamhaus/CBL/Barracuda zones only the documented listing codes mean "listed" (`127.255.255.x` is a *refusal* to answer public resolvers, not a listing). Don't reduce an RBL check to "any answer means listed".
 
 ## Privacy — non-negotiable (see PRIVACY.md)
