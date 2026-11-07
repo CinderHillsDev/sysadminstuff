@@ -136,11 +136,6 @@ async function main() {
     okUpstream('tenant microsoft.com 200', status, status === 200, `status ${status}`);
     okUpstream('tenant is Commercial', status, json && json.isTenant && json.environment === 'Commercial', JSON.stringify(json && json.environment));
     okUpstream('tenant has GUID', status, json && /^[0-9a-f-]{36}$/.test(json.tenantId || ''), JSON.stringify(json && json.tenantId));
-    // The initial domain is only reported when a candidate's issuer GUID matched,
-    // so it must either be absent or be a real .onmicrosoft.com name.
-    okUpstream('tenant defaultDomain shape', status, !json || typeof json.defaultDomain === 'string'
-      && (!json.defaultDomain || /^[a-z0-9-]+\.onmicrosoft\.com$/.test(json.defaultDomain)), JSON.stringify(json && json.defaultDomain));
-    okUpstream('tenant microsoft.com initial domain', status, json && json.defaultDomain === 'microsoft.onmicrosoft.com', JSON.stringify(json && json.defaultDomain));
   }
   {
     const { status, json } = await getJson('/api/tenant?domain=irs.gov');
@@ -153,9 +148,6 @@ async function main() {
   {
     const { status, json } = await getJson('/api/tenant?domain=army.mil');
     okUpstream('tenant army.mil is DoD', status, json && json.environment === 'DoD', JSON.stringify(json && json.environment));
-    // DoD/GCC tenants' initial domains don't follow the domain label, so "unknown"
-    // is the expected honest answer here — pin that we never guessed.
-    okUpstream('tenant army.mil does not guess a defaultDomain', status, json && (json.defaultDomain === '' || /\.onmicrosoft\.(com|us)$/.test(json.defaultDomain)), JSON.stringify(json && json.defaultDomain));
   }
   {
     const { status } = await getJson('/api/tenant?domain=notadomain'); // no dot -> invalid

@@ -693,28 +693,6 @@ async function runTests() {
   eq('conclusion: skipped body is not accessible', bigMail.find((c) => c.key === 'bodyAccessible').ok, false);
   check('conclusion wording is human readable', /blacklist-check|Received/.test(bigMail.map((c) => c.text).join(' ')));
 
-  // ================= lib/parse.mjs: M365 initial-domain candidates =================
-  eq('candidates: from the queried domain', parse.initialDomainCandidates({ domain: 'nvidia.com' }), ['nvidia.onmicrosoft.com']);
-  eq('candidates: every tenant domain, deduped', parse.initialDomainCandidates({ domain: 'acme.com', domains: ['acme.com', 'acme.net', 'beta.com'] }),
-    ['acme.onmicrosoft.com', 'beta.onmicrosoft.com']);
-  eq('candidates: brand slug, whole and first word', parse.initialDomainCandidates({ domain: 'x.com', brandName: 'NVIDIA Corporation' }),
-    ['x.onmicrosoft.com', 'nvidia-corporation.onmicrosoft.com', 'nvidia.onmicrosoft.com']);
-  eq('candidates: brand punctuation never reaches DNS', parse.initialDomainCandidates({ domain: 'y.com', brandName: 'Contoso, Ltd <b>' })[1],
-    'contoso-ltd-b.onmicrosoft.com');
-  eq('candidates: already-onmicrosoft input is not doubled', parse.initialDomainCandidates({ domain: 'foo.onmicrosoft.com' }),
-    ['foo.onmicrosoft.com']);
-  eq('candidates: an over-long label is dropped', parse.initialDomainCandidates({ domain: `${'a'.repeat(70)}.com` }), []);
-  eq('candidates: nothing at all', parse.initialDomainCandidates({}), []);
-  eq('candidates: respects cap', parse.initialDomainCandidates({ domains: ['a.com', 'b.com', 'c.com', 'd.com', 'e.com', 'f.com', 'g.com'] }).length, 6);
-
-  const TID = '43083d15-7273-40c1-b7db-39efd9ccc17a';
-  eq('defaultDomain: the candidate whose GUID matches wins',
-    parse.pickDefaultDomain([{ candidate: 'other.onmicrosoft.com', tenantId: 'deadbeef-dead-beef-dead-beefdeadbeef' }, { candidate: 'NVIDIA.OnMicrosoft.com', tenantId: TID }], TID),
-    'nvidia.onmicrosoft.com');
-  eq('defaultDomain: no match means unknown, not a guess', parse.pickDefaultDomain([{ candidate: 'other.onmicrosoft.com', tenantId: 'x' }], TID), '');
-  eq('defaultDomain: no tenant id, no probing', parse.pickDefaultDomain([{ candidate: 'a.onmicrosoft.com', tenantId: TID }], ''), '');
-  eq('defaultDomain: tolerates failed probes', parse.pickDefaultDomain([null, { candidate: 'b.onmicrosoft.com', tenantId: '' }], TID), '');
-
   // ---- dns wire format (trace) ----
   const wire = await import('../lib/dnswire.mjs');
   const q = wire.buildQuery('example.com', 'A', 0xabcd);

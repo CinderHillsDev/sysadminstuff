@@ -52,8 +52,7 @@ Each row is graded PASS / WARN / FAIL / INFO, links straight to the tab that exp
 - Reflects your own public IP, ASN/provider, approximate location, and the Cloudflare edge/TLS details of your connection — all read straight off the edge request, no upstream lookup and nothing logged. Cross-links into Whois/ASN/Geo/Reverse DNS/Blacklist pre-filled with your IP.
 
 ### M365
-- **Microsoft 365 / Entra tenant lookup** — given a domain, resolves the tenant ID (GUID), brand name, the **initial `<tenant>.onmicrosoft.com` domain**, and Managed vs. Federated (ADFS) identity, and classifies the **cloud environment: Commercial / GCC / GCC High / DoD** (via OpenID Connect metadata `tenant_region_sub_scope` + cloud instance). Also lists other domains in the tenant. Uses only public, unauthenticated Microsoft endpoints — no login required.
-  Microsoft never publishes the initial domain, so the lookup proposes candidates (the label of every known domain + the brand name) and keeps one **only if its OIDC issuer GUID matches the tenant**. When nothing confirms it says "not published" — it never guesses, because plausible-looking names usually belong to unrelated real tenants.
+- **Microsoft 365 / Entra tenant lookup** — given a domain, resolves the tenant ID (GUID), brand name, and Managed vs. Federated (ADFS) identity, and classifies the **cloud environment: Commercial / GCC / GCC High / DoD** (via OpenID Connect metadata `tenant_region_sub_scope` + cloud instance). Also lists other domains in the tenant. Uses only public, unauthenticated Microsoft endpoints — no login required.
 
 ### Cloud
 - **Cloud IP** — which cloud owns an IP, with exact AWS region/service (from AWS's published ranges) or ASN-based provider detection for the rest.
