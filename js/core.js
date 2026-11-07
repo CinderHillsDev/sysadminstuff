@@ -1308,6 +1308,58 @@
     return lines.join('\n').replace(/^\n+/, '');
   }
 
+  // ---------- SPF tree rendering ----------
+  // How a receiver actually evaluates a record: depth-first, spending one DNS
+  // lookup per include/a/mx/ptr/exists as it goes. The walk in email.js tags each
+  // costing term with the number it consumed (entry.n), which is what makes an
+  // over-limit record diagnosable rather than merely "too many".
+
+  // One mechanism as text: "include:foo.com (#3)" — shared so the HTML tree and
+  // the copyable ASCII tree can never word the same node differently.
+  function spfTermLabel(entry) {
+    const t = (entry && entry.term) || {};
+    const target = t.value || '';
+    let shown = target ? `${t.type}:${target}` : t.type;
+    if ((t.type === 'a' || t.type === 'mx' || t.type === 'ptr') && !target) shown += ' (self)';
+    return shown + (entry.n ? ` (#${entry.n})` : '');
+  }
+
+  // ASCII rendering of a walk tree, for the copy button and for tests. Each domain
+  // node prints a header line, then its mechanisms; a mechanism that expands into
+  // another record nests under it, with a bar column while siblings remain.
+  function spfTreeText(node, indent, out) {
+    indent = indent || '';
+    out = out || [];
+    if (!node) return '';
+    const head = node.record ? String(node.record).replace(/\s+/g, ' ').trim()
+      : `(${node.error || 'no record'})`;
+    out.push(`${indent}${node.domain}  ${head}`);
+    const terms = node.terms || [];
+    terms.forEach((entry, i) => {
+      const last = i === terms.length - 1;
+      out.push(`${indent}${last ? '└─ ' : '├─ '}${spfTermLabel(entry)}  [${entry.status}]`);
+      if (entry.child && (entry.child.record || entry.child.error)) {
+        spfTreeText(entry.child, indent + (last ? '   ' : '│  '), out);
+      }
+    });
+    return out.join('\n');
+  }
+
+  // Number each lookup-costing mechanism the way a receiver actually spends them:
+  // depth-first, so an include's own mechanisms are consumed before the next
+  // sibling at the parent level. walkSpf counts the total correctly but cannot
+  // number as it goes (it recurses concurrently), so this pass fixes the order.
+  // Returns the total, which equals ctx.lookups from the walk.
+  function spfNumberLookups(node, state) {
+    state = state || { n: 0 };
+    if (!node || !node.terms) return state.n;
+    node.terms.forEach((entry) => {
+      entry.n = ++state.n;
+      if (entry.child) spfNumberLookups(entry.child, state);
+    });
+    return state.n;
+  }
+
   const api = {
     SECURITY_HEADER_NAMES, DKIM_SELECTORS, SPF_DNS_LOOKUP_LIMIT, SPF_VOID_LOOKUP_LIMIT,
     reportDomain, daysUntil, domainReport, reportToText, reportScore, caaLabel,
@@ -1317,7 +1369,7 @@
     buildSpf, buildDmarc, cidrContains, splitCidr,
     ipToInt, intToIp, maskToBits, subnetInfo, parseCidrInput,
     b64EncodeUtf8, b64DecodeUtf8, looksLikeBase64, b64urlDecode, decodeJwtParts,
-    parseSpf, SPF_QUALIFIERS, parseDmarcTags, spfLookupTerms,
+    parseSpf, SPF_QUALIFIERS, parseDmarcTags, spfLookupTerms, spfTermLabel, spfTreeText, spfNumberLookups,
     chmodToSymbolic, chmodToOctal, chmodDescribe,
     parseInBase, numberBases, epochToParts, passwordEntropyBits,
     parseCron, cronMatches, nextCronRuns, describeCron, md5,

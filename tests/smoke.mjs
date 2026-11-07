@@ -693,6 +693,47 @@ async function runTests() {
   eq('conclusion: skipped body is not accessible', bigMail.find((c) => c.key === 'bodyAccessible').ok, false);
   check('conclusion wording is human readable', /blacklist-check|Received/.test(bigMail.map((c) => c.text).join(' ')));
 
+  // ================= core.js: SPF tree =================
+  // The tree numbers each mechanism the way a receiver actually spends lookups:
+  // depth-first, so an include's own mechanisms are consumed before the parent's
+  // next sibling. Numbering breadth-first (the tempting version, and what the
+  // concurrent walk would give you) puts every # in the wrong place below level 1.
+  eq('spfTermLabel: include with target', core.spfTermLabel({ term: { type: 'include', value: 'x.com' }, n: 2 }), 'include:x.com (#2)');
+  eq('spfTermLabel: bare mx is self', core.spfTermLabel({ term: { type: 'mx', value: '' } }), 'mx (self)');
+  eq('spfTermLabel: redirect keeps target', core.spfTermLabel({ term: { type: 'redirect', value: 'other.com' }, n: 7 }), 'redirect:other.com (#7)');
+
+  const tree = {
+    domain: 'root.test', record: 'v=spf1 include:a.test include:c.test',
+    terms: [
+      { term: { type: 'include', value: 'a.test' }, status: 'ok', child: {
+        domain: 'a.test', record: 'v=spf1 mx include:b.test', terms: [
+          { term: { type: 'mx', value: '' }, status: 'void', child: null },
+          { term: { type: 'include', value: 'b.test' }, status: 'dead', child: { domain: 'b.test', error: 'no SPF record', terms: [] } },
+        ],
+      } },
+      { term: { type: 'include', value: 'c.test' }, status: 'ok', child: { domain: 'c.test', record: 'v=spf1 -all', terms: [] } },
+    ],
+  };
+  eq('spfNumberLookups: total equals depth-first count', core.spfNumberLookups(tree), 4);
+  eq('spfNumberLookups: first sibling', tree.terms[0].n, 1);
+  eq('spfNumberLookups: nested mechanisms numbered inside', tree.terms[0].child.terms.map((e) => e.n), [2, 3]);
+  eq('spfNumberLookups: parent\'s next sibling comes last', tree.terms[1].n, 4);
+  eq('spfNumberLookups: renumbering is stable', core.spfNumberLookups(tree) && tree.terms[1].n, 4);
+  eq('spfTreeText: full outline', core.spfTreeText(tree),
+    [
+      'root.test  v=spf1 include:a.test include:c.test',
+      '├─ include:a.test (#1)  [ok]',
+      '│  a.test  v=spf1 mx include:b.test',
+      '│  ├─ mx (self) (#2)  [void]',
+      '│  └─ include:b.test (#3)  [dead]',
+      '│     b.test  (no SPF record)',
+      '└─ include:c.test (#4)  [ok]',
+      '   c.test  v=spf1 -all',
+    ].join('\n'));
+  eq('spfTreeText: error node shows why', core.spfTreeText({ domain: 'x.test', error: 'cycle — already visited', terms: [] }),
+    'x.test  (cycle — already visited)');
+  eq('spfTreeText: empty input', core.spfTreeText(null), '');
+
   // ---- dns wire format (trace) ----
   const wire = await import('../lib/dnswire.mjs');
   const q = wire.buildQuery('example.com', 'A', 0xabcd);

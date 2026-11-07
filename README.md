@@ -23,6 +23,7 @@ Each row is graded PASS / WARN / FAIL / INFO, links straight to the tab that exp
 
 ### Email
 - **SPF** — parsed mechanisms with plain-English explanations and a policy summary.
+- **SPF Lookups** — walks the whole `include:` tree the way a receiver evaluates it and draws it as a nested tree, numbering each mechanism with the DNS lookup it spends. Flags a PermError past the RFC 7208 limit of 10 (or 2 void lookups), dead includes, and cycles; copyable as text.
 - **DMARC** — every tag explained, policy badge (NONE / QUARANTINE / REJECT), report addresses.
 - **DKIM** — look up any selector, key type and bit length, testing-mode warning.
 - **MX** — priority-ordered hosts with resolved IPs and PTR records.

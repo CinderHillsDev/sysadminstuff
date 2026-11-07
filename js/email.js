@@ -123,18 +123,18 @@ const SPF_STATUS_BADGE = {
   ptr: '<span class="warn">ptr — deprecated</span>',
 };
 
-// Flatten the walk tree into indented table rows (depth via tree-guides).
-function spfRows(node, depth, rows) {
-  node.terms.forEach((entry) => {
-    const t = entry.term;
-    const indent = depth ? `<span class="muted">${'&nbsp;&nbsp;'.repeat(depth)}└ </span>` : '';
-    const target = t.value || (t.type === 'redirect' ? '' : '(self)');
-    rows.push(
-      `<tr><td>${indent}${window.escapeHtml(t.type)}${target ? ':' + window.escapeHtml(target) : ''}</td>` +
-      `<td>${SPF_STATUS_BADGE[entry.status] || window.escapeHtml(entry.status)}</td></tr>`
-    );
-    if (entry.child && entry.child.record) spfRows(entry.child, depth + 1, rows);
-  });
+// The tree, as nested lists: one block per domain, mechanisms indented under it,
+// an include's record nested inside the line that pulled it in.
+function spfTreeHtml(node, e) {
+  const head = node.record
+    ? `<code class="spf-rec">${e(String(node.record).replace(/\s+/g, ' ').trim())}</code>`
+    : `<span class="err">${e(node.error || 'no record')}</span>`;
+  const kids = (node.terms || []).map((entry) => {
+    const status = SPF_STATUS_BADGE[entry.status] || e(String(entry.status));
+    const child = entry.child && (entry.child.record || entry.child.error) ? spfTreeHtml(entry.child, e) : '';
+    return `<li><span class="mech">${e(window.spfTermLabel(entry))}</span> ${status}${child}</li>`;
+  }).join('');
+  return `<ul class="spf-tree"><li class="node"><span class="dom">${e(node.domain)}</span> ${head}${kids ? `<ul>${kids}</ul>` : ''}</li></ul>`;
 }
 
 async function runSpfCheck(query, panel) {
@@ -164,20 +164,29 @@ async function runSpfCheck(query, panel) {
     } else if (deadCount) {
       summaryClass = 'yellow';
       summaryText = `⚠ ${ctx.lookups}/${SPF_LOOKUP_LIMIT} lookups used, but ${deadCount} broken — see below.`;
+    } else if (ctx.lookups === SPF_LOOKUP_LIMIT) {
+      // 10 is allowed, but it is the ceiling: nothing else can be added without
+      // tipping the record into PermError. Say so rather than calling it clean.
+      summaryClass = 'yellow';
+      summaryText = `⚠ Exactly at the limit of ${SPF_LOOKUP_LIMIT} lookups — it works today, but adding another sender will break it. The #10 line below is the last one a receiver will evaluate.`;
     }
 
-    const rows = [];
-    spfRows(root, 0, rows);
+    // Number the tree depth-first (a receiver spends lookups in evaluation order,
+    // not breadth-first) before rendering, so #10 is the mechanism that fails.
+    window.spfNumberLookups(root);
+    const treeHtml = spfTreeHtml(root, window.escapeHtml);
+    const treeText = window.spfTreeText(root);
+
     const meters =
       `<div class="summary ${summaryClass}">${window.escapeHtml(summaryText)}</div>` +
       `<div class="muted" style="margin:.4rem 0">Lookups: <b>${ctx.lookups}/${SPF_LOOKUP_LIMIT}</b>` +
-      ` &nbsp;·&nbsp; Void lookups: <b>${ctx.voids}/${SPF_VOID_LIMIT}</b></div>`;
+      ` &nbsp;·&nbsp; Void lookups: <b>${ctx.voids}/${SPF_VOID_LIMIT}</b>` +
+      ' &nbsp;·&nbsp; <span class="muted">the # on each line is the lookup a receiver spends there</span></div>';
 
     window.showResult(panel,
       meters +
       window.card('Root SPF record', `<pre class="raw">${window.escapeHtml(root.record)}</pre>`, root.record) +
-      window.card('Lookup tree',
-        `<table><thead><tr><th>Mechanism</th><th>Status</th></tr></thead><tbody>${rows.join('')}</tbody></table>`));
+      window.card('Lookup tree', treeHtml, treeText));
   } catch (e) {
     window.showError(panel, `Could not reach the DNS resolver. ${e.message || ''}`.trim());
   }
