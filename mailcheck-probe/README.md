@@ -58,6 +58,31 @@ Subdomains of a zone are added from the *apex*'s Email Routing **Settings → Su
 which requires the apex to be onboarded first — so a parked domain you already have on
 Cloudflare is the fastest route, and no separate zone or NS delegation is involved.
 
+## Try it with no Cloudflare setup at all
+
+`wrangler dev` simulates an inbound message, so the handler, the parsing and the KV
+read-back can all be exercised before any domain, rule or routing exists:
+
+```sh
+cd mailcheck-probe
+printf 'PROBE_KEY=localdev123\n' > .dev.vars      # gitignored; secrets for local dev
+npx wrangler dev --port 8796
+```
+
+Then POST a raw RFC 5322 message (it must contain a `Message-ID`) at the local email
+endpoint, with the envelope in the query string:
+
+```sh
+curl -X POST 'http://127.0.0.1:8796/cdn-cgi/local/email?from=ops%40example.org&to=9x7q%40mailcheck.example.com' \
+  --data-binary @/tmp/test.eml
+curl -s 'http://127.0.0.1:8796/last?key=localdev123&to=9x7q'
+```
+
+Note what this does **not** test: the `Authentication-Results` in that message is one you
+wrote. Cloudflare prepending its own is the documented behaviour the deployed probe exists
+to confirm, and only real inbound mail can confirm it. Same for the connecting IP — a local
+`Received` line is whatever you typed into it.
+
 ## Setup (~10 minutes)
 
 ```sh

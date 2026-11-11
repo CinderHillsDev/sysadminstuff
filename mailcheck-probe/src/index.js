@@ -10,7 +10,7 @@
 // in your own account's KV, with a 24 h TTL, behind a secret key. See
 // mailcheck-probe/README.md for the ten-minute setup and how to read the output.
 
-import { summarizeHeaders, probeConclusions } from '../parse.mjs';
+import { summarizeHeaders, probeConclusions, tokenOf } from '../parse.mjs';
 
 // Anything bigger is not worth hashing inside a 10 ms CPU budget; the probe
 // records that it skipped rather than silently failing.
@@ -22,20 +22,9 @@ async function sha256Hex(buf) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function localPart(address) {
-  const s = String(address || '');
-  const at = s.lastIndexOf('@');
-  return (at >= 0 ? s.slice(0, at) : s).toLowerCase();
-}
 
 // A recipient like `a1b2c3d4@mailcheck.example.net` is a request for a separate
 // record; anything else just overwrites `p:latest`.
-function tokenOf(address) {
-  // Folded: mail systems lowercase local parts in practice, so the stored key and the
-  // &to= in the read-back URL have to be canonical or they will never meet.
-  const lp = localPart(address).replace(/^(check|probe|test)\+/, '').toLowerCase();
-  return /^[0-9a-f]{8,32}$/.test(lp) ? lp : '';
-}
 
 export default {
   async email(message, env) {
@@ -97,7 +86,11 @@ export default {
       const want = String(env.PROBE_KEY || '');
       const got = String(url.searchParams.get('key') || '');
       if (!want || !equalStrings(want, got)) return text('Forbidden', 403);
-      const token = tokenOf(url.searchParams.get('to') || '') || 'latest';
+      // An unparseable &to= must not quietly become "the newest record" — that is another
+      // person's mail metadata. Only an absent &to= means "latest".
+      const toParam = url.searchParams.get('to');
+      const token = toParam === null ? 'latest' : tokenOf(toParam);
+      if (!token) return text('Bad &to= value: not a token this probe stores. Omit &to= to read the most recent record.', 400);
       const stored = await env.PROBE.get(`p:${token}`);
       if (!stored) return text(`No probe record under "${token}" yet.`, 404);
       const record = JSON.parse(stored);

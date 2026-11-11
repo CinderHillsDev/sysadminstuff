@@ -725,6 +725,18 @@ async function runTests() {
     'mx.example.org; spf=pass (test mode, domain matched) header.from=x')[0].serviceId, 'mx.example.org');
   eq('authResultsChain on nothing', probe.authResultsChain(undefined), []);
 
+  eq('tokenOf: base32 test code', probe.tokenOf('4K2M9X@mailcheck.example.com'), '4k2m9x');
+  eq('tokenOf: hex token still works', probe.tokenOf('check+deadbeef@mail.test'), 'deadbeef');
+  eq('tokenOf: plus-address on a subdomain', probe.tokenOf('probe+4k2m9x@mail.test'), '4k2m9x');
+  eq('tokenOf: case is folded', probe.tokenOf('4K2M9X'), probe.tokenOf('4k2m9x'));
+  eq('tokenOf: bare address, no domain', probe.tokenOf('4k2m9x'), '4k2m9x');
+  // The bug this pins: a code that fails to parse used to fall through to "latest", which
+  // is another person's record. Parsing must be explicit, and callers must 400 on ''.
+  eq('tokenOf: too short is no token', probe.tokenOf('ab@mail.test'), '');
+  eq('tokenOf: punctuation is no token', probe.tokenOf('a-b-c@mail.test'), '');
+  eq('tokenOf: empty is no token', [probe.tokenOf(''), probe.tokenOf(null), probe.tokenOf(undefined)], ['', '', '']);
+  eq('tokenOf: not a word-address', probe.tokenOf('support@mail.test'), 'support');
+
   const gmailStyle = probe.summarizeHeaders({
     'Authentication-Results': 'mx.example.net; spf=pass smtp.mailfrom=gmail.com; dkim=pass header.d=gmail.com',
     'DKIM-Signature': 'v=1; a=rsa-sha256; d=gmail.com; s=20230601; bh=XYZ=;',

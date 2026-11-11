@@ -208,3 +208,15 @@ export function probeConclusions(record) {
 
   return out;
 }
+
+// The KV key for a recipient address. Kept here rather than in the Worker so it is
+// smoke-tested: when this only accepted hex, every base32 test code (4k2m9x) parsed to ''
+// and silently fell through to the *latest* record — somebody else's mail metadata.
+export function tokenOf(address) {
+  const local = String(address == null ? '' : address);
+  const at = local.lastIndexOf('@');
+  const lp = (at >= 0 ? local.slice(0, at) : local).toLowerCase().replace(/^(check|probe|test)\+/, '');
+  // Base32 codes and hex tokens both have to parse; 4 chars minimum keeps stray words from
+  // becoming keys.
+  return /^[0-9a-z]{4,40}$/.test(lp) ? lp : '';
+}
