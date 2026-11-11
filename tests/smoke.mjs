@@ -657,6 +657,20 @@ async function runTests() {
   eq('authResults mech pairs', probe.authResults('mx.example.net; spf=pass smtp.mailfrom=gmail.com; dkim=pass header.d=gmail.com; dmarc=pass p=quarantine'),
     { spf: 'pass', dkim: 'pass', dmarc: 'pass' });
 
+  // Which host wrote an Authentication-Results is the difference between a verdict
+  // and a claim, so the chain has to stay split up. Email Routing documents that it
+  // prepends its own, with mx.cloudflare.net as the auth-service-id.
+  eq('authResultsChain keeps service ids', probe.authResultsChain([
+    'mx.cloudflare.net; spf=pass smtp.mailfrom=example.org; dkim=pass header.d=example.org; dmarc=pass',
+    'mx.example.net; spf=neutral header.from=example.org',
+  ]).map((h) => [h.serviceId, h.byCloudflare, h.results.dmarc]),
+  [['mx.cloudflare.net', true, 'pass'], ['mx.example.net', false, undefined]]);
+  eq('authResultsChain splits a comma-joined repeat', probe.authResultsChain(
+    'mx01.cloudflare.net; spf=pass, mail.example.org; dkim=fail header.d=evil.test').length, 2);
+  eq('authResultsChain does not shred tag values', probe.authResultsChain(
+    'mx.example.org; spf=pass (test mode, domain matched) header.from=x')[0].serviceId, 'mx.example.org');
+  eq('authResultsChain on nothing', probe.authResultsChain(undefined), []);
+
   const gmailStyle = probe.summarizeHeaders({
     'Authentication-Results': 'mx.example.net; spf=pass smtp.mailfrom=gmail.com; dkim=pass header.d=gmail.com',
     'DKIM-Signature': 'v=1; a=rsa-sha256; d=gmail.com; s=20230601; bh=XYZ=;',
@@ -669,6 +683,18 @@ async function runTests() {
   eq('summary says no Cloudflare hop', gmailStyle.cloudflareHopSeen, false);
   eq('summary keeps the envelope', gmailStyle.envelopeHints.returnPath, '<bounces@googlemail.com>');
   eq('summary counts one dkim sig', gmailStyle.dkimSignatures.length, 1);
+  eq('summary marks an upstream verdict as not Cloudflare\'s', gmailStyle.arByCloudflare, false);
+
+  // The shape the docs promise: Cloudflare's own result prepended, the sender's below it.
+  const withCfAr = probe.summarizeHeaders({
+    'Authentication-Results': ['mx.cloudflare.net; spf=pass smtp.mailfrom=example.org; dkim=pass header.d=example.org; dmarc=pass p=reject',
+      'mx.example.net; spf=neutral header.from=example.org'],
+    Received: ['from mail.example.org (mail.example.org [198.51.100.7]) by mx01.mail.cloudflare.net with ESMTP id 44'],
+  });
+  eq('summary prefers Cloudflare\'s verdict', withCfAr.authenticationResults.dmarc, 'pass');
+  eq('summary knows whose verdict it is', withCfAr.arFrom, 'mx.cloudflare.net');
+  eq('summary marks it trustworthy', withCfAr.arByCloudflare, true);
+  eq('summary keeps the whole chain', withCfAr.arChain.length, 2);
 
   const cfStyle = probe.summarizeHeaders({
     Received: ['from mail.example.org (mail.example.org [198.51.100.7]) by mx01.mail.cloudflare.net with ESMTP id 44 for <t@mail.example.net>',
@@ -687,8 +713,17 @@ async function runTests() {
   eq('conclusion: connecting ip', byKey.connectingIp.ok, true);
   eq('conclusion: cloudflare hop', byKey.cloudflareHop.ok, true);
   eq('conclusion: auth results missing is a no', byKey.authResultsHeader.ok, false);
+  eq('conclusion: no Cloudflare verdict either', byKey.cloudflareVerdict.ok, false);
   eq('conclusion: body hashed', byKey.bodyAccessible.ok, true);
-  eq('conclusion count', conclusions.length, 5);
+  eq('conclusion count', conclusions.length, 6);
+  const cfArConclusions = probe.probeConclusions({ summary: withCfAr, body: { bytes: 900, sha256: 'b'.repeat(64) } });
+  const cfVerdict = cfArConclusions.find((c) => c.key === 'cloudflareVerdict');
+  eq('conclusion: Cloudflare verdict is a yes', cfVerdict.ok, true);
+  check('conclusion names the verdicts it found', /spf=pass/.test(cfVerdict.text));
+  const upstreamOnly = probe.probeConclusions({ summary: gmailStyle, body: { bytes: 10, sha256: 'c'.repeat(64) } })
+    .find((c) => c.key === 'cloudflareVerdict');
+  eq('conclusion: upstream only is a no', upstreamOnly.ok, false);
+  check('conclusion: upstream only says whose claim it is', /mx\.example\.net/.test(upstreamOnly.text));
   const bigMail = probe.probeConclusions({ summary: gmailStyle, body: { bytes: 9e6, skipped: 'over size cap' } });
   eq('conclusion: skipped body is not accessible', bigMail.find((c) => c.key === 'bodyAccessible').ok, false);
   check('conclusion wording is human readable', /blacklist-check|Received/.test(bigMail.map((c) => c.text).join(' ')));

@@ -95,6 +95,31 @@ export function authResults(resultsText) {
   return out;
 }
 
+// RFC 8601: each Authentication-Results header starts with the auth-service-id —
+// the host that computed the verdicts — followed by `;` and the tag list. Which
+// service id signed the result is the whole question of whether to believe it, so
+// split the values up rather than squashing them into one bag of tags.
+//
+// A repeated header may arrive as one comma-joined string (Headers.get semantics),
+// so split on a comma only where a hostname+`;` follows — the shape of a new
+// header's service id, never of a tag value.
+export function authResultsChain(values) {
+  const raw = Array.isArray(values) ? values : [values];
+  const parts = [];
+  raw.forEach((v) => String(v == null ? '' : v)
+    .split(/,(?=\s*[a-z0-9._-]+\s*;)/i)
+    .forEach((piece) => { if (piece.trim()) parts.push(piece.trim()); }));
+  return parts.map((v) => {
+    const i = v.indexOf(';');
+    const serviceId = (i > 0 ? v.slice(0, i) : v).trim();
+    return {
+      serviceId,
+      byCloudflare: /\b(mx\.cloudflare\.net|route\d*\.mx\.cloudflare\.net)\b/i.test(serviceId),
+      results: authResults(i > 0 ? v.slice(i) : ''),
+    };
+  });
+}
+
 // Turn a probe record's headers into the answers we deployed the probe for.
 export function summarizeHeaders(headers) {
   const all = headers || {};
@@ -115,6 +140,13 @@ export function summarizeHeaders(headers) {
   const cloudflareHop = received.find((h) => /cloudflare\.net|mx\.cloudflare/i.test(h.by + ' ' + h.comments.join(' ')));
   const externalIps = uniq(received.flatMap((h) => h.ips));
 
+  // Email Routing validates DMARC itself and prepends an Authentication-Results
+  // header whose service id is mx.cloudflare.net. That one is trustworthy without
+  // any ARC chain work; anything else in the header set was written by somebody
+  // upstream and is only evidence, never a verdict.
+  const arChain = authResultsChain(lower['authentication-results']);
+  const cfVerdict = arChain.find((h) => h.byCloudflare) || null;
+
   return {
     headerNames: Object.keys(all).map((k) => String(k).toLowerCase()).sort(),
     authHeadersSeen: authSeen,
@@ -124,7 +156,12 @@ export function summarizeHeaders(headers) {
     receivedHops: received.map((h) => ({ by: h.by, from: h.from, for: h.for, with: h.with, comments: h.comments, ips: h.ips })),
     dkimSignatures: sigs,
     arcSealSets: [...arcSets].sort((a, b) => a - b),
-    authenticationResults: authResults(lower['authentication-results'] || ''),
+    // The verdict to surface: Cloudflare's own if it arrived, otherwise the first
+    // upstream one (arFrom says which, so the UI can label it unverified).
+    authenticationResults: (cfVerdict || arChain[0] || {}).results || {},
+    arFrom: (cfVerdict || arChain[0] || {}).serviceId || '',
+    arByCloudflare: !!cfVerdict,
+    arChain: arChain.map((h) => ({ serviceId: h.serviceId, byCloudflare: h.byCloudflare, results: h.results })),
     receivedSpf: list('received-spf').join(' | '),
     envelopeHints: { returnPath: lower['return-path'] || '', sender: lower.sender || '' },
     externalIps,
@@ -152,6 +189,14 @@ export function probeConclusions(record) {
   push('authResultsHeader', (s.authHeadersSeen || []).includes('authentication-results') || (s.authHeadersSeen || []).includes('arc-authentication-results'),
     'An Authentication-Results header is present, so a downstream verdict can be surfaced (still verify DKIM ourselves).',
     'No Authentication-Results header arrived — the feature must compute DKIM itself and can only report SPF from the published record.');
+
+  // The docs promise this one, so it doubles as a check on the docs: Email Routing
+  // says it validates DMARC before invoking the Worker and prepends its own result.
+  push('cloudflareVerdict', s.arByCloudflare && Object.keys(s.authenticationResults || {}).length > 0,
+    `Cloudflare's own Authentication-Results arrived (${s.arFrom}) with spf=${(s.authenticationResults || {}).spf || '?'} dkim=${(s.authenticationResults || {}).dkim || '?'} dmarc=${(s.authenticationResults || {}).dmarc || '?'} — report those as fact, no recompute needed.`,
+    s.arFrom
+      ? `Only an upstream-authored Authentication-Results arrived (from ${s.arFrom}), not mx.cloudflare.net — show it as the sender's claim, unverified, and recompute DKIM.`
+      : 'No Cloudflare-authored Authentication-Results — contrary to the docs. The feature must verify DKIM itself and can only report SPF from the published record.');
 
   push('dkimSigned', (s.dkimSignatures || []).length > 0,
     `The message carries ${s.dkimSignatures.length} DKIM signature(s) — a real verify is possible.`,

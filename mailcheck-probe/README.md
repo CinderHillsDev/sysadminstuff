@@ -11,7 +11,14 @@ That answer decides how much of a "send us an email and we check it" feature can
 fact versus infer. Cloudflare's docs confirm inbound Email Routing is unlimited on
 Workers Free, that a routing rule's destination must be a Worker with an `email` handler
 (Pages Functions have none), and that inbound mail failing **both** SPF and DKIM is
-rejected before a Worker ever sees it — but they say nothing about the header set.
+rejected before a Worker ever sees it. They also state something we were hoping not to have
+to take on faith: Email Routing validates DMARC **before** invoking the Worker and prepends
+its own `Authentication-Results` with `mx.cloudflare.net` as the auth-service-id. The docs
+say nothing about the rest of the header set — above all whether a connecting IP reaches us.
+
+So the probe now tests a documented claim instead of guessing blind: if `cloudflareVerdict`
+comes back false, the docs are wrong and that is the most useful result of the whole
+exercise.
 
 **Delete this directory once you have the answer.** Nothing in the site depends on it.
 
@@ -101,8 +108,8 @@ under its own key as well:
 curl -s ".../last?key=$KEY&to=deadbeef"
 ```
 
-Use a different hex token per test: `check+aaaa1111@` (Gmail), `check+bbbb2222@` (direct
-SMTP), `check+cccc3333@` (forward).
+Use a different hex token per test: `probe+aaaa1111@` (Gmail), `probe+bbbb2222@` (direct
+SMTP), `probe+cccc3333@` (forward).
 
 ## How to read `conclusions`
 
@@ -111,8 +118,14 @@ SMTP), `check+cccc3333@` (forward).
 | `connectingIp` | The feature can blacklist-check the real sending IP | Skip IP reputation, or label it "as claimed by the sender" |
 | `cloudflareHop` | The last hop is authoritative rather than self-reported | Treat any address as a claim, not a fact |
 | `authResultsHeader` | Surface a downstream verdict, still verifying DKIM ourselves | Compute DKIM ourselves; report SPF only from the published record |
+| `cloudflareVerdict` | Report SPF/DKIM/DMARC as fact — Cloudflare computed them, no ARC chain to walk | Any `Authentication-Results` present was written upstream: show it as the sender's claim, unverified |
 | `dkimSigned` | A real cryptographic verify is possible | Nothing to verify — check the message was signed at all |
 | `bodyAccessible` | Body canonicalisation fits in one invocation | Keep to headers; move any verify out of the 10 ms budget |
+
+`cloudflareVerdict` is the one that changes the product: it separates the checks we can do
+on *any* domain's mail (DNS-side, which the Overview report already does) from a verdict on
+a specific delivered message. If it is true, "we authenticated this message for you" is a
+statement we can make from the header alone.
 
 `bodyAccessible: false` with `skipped: "over size cap"` is expected for big mail. If you
 want the CPU number rather than the guess, check **Workers → Observability → Logs** for the
