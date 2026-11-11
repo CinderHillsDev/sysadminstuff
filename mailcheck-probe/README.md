@@ -151,14 +151,21 @@ delivering. Delete the zone only if you created one. KV entries expire on their 
 
 ## Handing out addresses (design notes for the real feature, not this probe)
 
-The test local part should be a short random 6-digit code, so many people can be testing at
-once without colliding. Three things follow from the platform limits:
+The test local part should be a short random code, so many people can be testing at once
+without colliding. It is six characters of Crockford Base32 (`lib/testcodes.mjs`): digits
+plus letters with the confusable ones removed — I and L look like 1, O looks like 0, U
+trades places with V. Four things follow:
 
-1. **A bare `483920@` address needs a catch-all, and catch-alls are apex-only.** On a
-   subdomain the only alternative is `probe+483920@` (subaddressing) or one literal rule per
+1. **A bare `4K2M9X@` address needs a catch-all, and catch-alls are apex-only.** On a
+   subdomain the only alternative is `probe+4K2M9X@` (subaddressing) or one literal rule per
    code, which runs into the 200-rules-per-domain cap immediately. So the product needs its
    own *apex* domain with no real mail on it — not a label under an existing zone.
-2. **KV cannot allocate safely.** It is eventually consistent, `put()` has no create-if-absent
+2. **Six characters is a billion combinations** (32^6), which makes the birthday problem
+   stop mattering: ~500 concurrent codes is a 0.00002% chance that any two collide. Drawing
+   them is unbiased by construction, because 32 is a power of two — six characters are
+   exactly 30 random bits, no modulo reduction anywhere.
+
+3. **KV cannot allocate safely.** It is eventually consistent, `put()` has no create-if-absent
    option, and read-then-write races mean two people can be handed the same code. It also
    caps at 1,000 writes/day on Free, which would be the feature's throughput limit. Use a
    **SQLite-backed Durable Object** as the registry: `INSERT` on a PRIMARY KEY is atomic and
@@ -166,11 +173,16 @@ once without colliding. Three things follow from the platform limits:
    SQLite-backed DO classes are available on Workers Free (key-value-backed ones are not);
    5 GB per account is orders of magnitude more than the rows need. A cron trigger deletes
    expired rows, since SQLite has no TTL.
-3. **A 6-digit code is not a secret.** 1,000,000 combinations is enumerable, and the record
+4. **A code is an address, not a secret.** 1,000,000 combinations is enumerable, and the record
    behind it holds someone's message headers. Every row must therefore carry a second,
    unguessable read token handed to the requester in the result URL, and the read endpoint
    must return nothing on the code alone. Otherwise the toolbox would be shipping a window
    into strangers' mail, which is the one thing PRIVACY.md exists to prevent.
+
+5. **Because the alphabet excludes I, L and O, typed codes get folded back on read — which
+   means an ordinary word can look like a valid code** (`office@` normalizes to `0FFICE`).
+   So the `email()` handler must confirm the code exists in the registry before storing
+   anything, or stray mail to any word-address on the domain overwrites a live test's record.
 
 `tokenOf()` in `src/index.js` already keys a bare numeric local part as-is, so this probe
 works unchanged under either addressing scheme.

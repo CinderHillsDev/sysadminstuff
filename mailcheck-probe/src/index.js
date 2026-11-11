@@ -31,7 +31,9 @@ function localPart(address) {
 // A recipient like `a1b2c3d4@mailcheck.example.net` is a request for a separate
 // record; anything else just overwrites `p:latest`.
 function tokenOf(address) {
-  const lp = localPart(address).replace(/^(check|probe|test)\+/, '');
+  // Folded: mail systems lowercase local parts in practice, so the stored key and the
+  // &to= in the read-back URL have to be canonical or they will never meet.
+  const lp = localPart(address).replace(/^(check|probe|test)\+/, '').toLowerCase();
   return /^[0-9a-f]{8,32}$/.test(lp) ? lp : '';
 }
 

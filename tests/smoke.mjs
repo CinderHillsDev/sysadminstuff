@@ -15,6 +15,7 @@ async function runTests() {
   // core.js is a UMD-style classic script; require() picks up its module.exports.
   const core = require(join(__dirname, '..', 'js', 'core.js'));
   const parse = await import('../lib/parse.mjs');
+  const codes = await import('../lib/testcodes.mjs');
 
   // ---- tiny test harness ----
   let passed = 0;
@@ -622,6 +623,59 @@ async function runTests() {
   eq('dead include warns', spfRow({ total: 5, voids: 1, dead: 1, root: 5 }).status, 'warn');
   eq('failed walk is unknown not failed', spfRow({ error: 'SPF walk stopped: DNS lookup failed' }).status, 'info');
   eq('walk still running is pending', spfRow(undefined, { pending: ['spfwalk'] }).status, 'pending');
+
+  // ================= lib/testcodes.mjs: mail-check test codes =================
+  // Six Crockford-Base32 characters. The alphabet's size is load-bearing (it is what makes
+  // the bit draw unbiased) and so is what it leaves out, so both are asserted, not assumed.
+  eq('code alphabet is 32 distinct symbols', new Set(codes.CODE_ALPHABET).size, 32);
+  eq('code alphabet size is a power of two (5 bits/char)', Math.log2(codes.CODE_ALPHABET.length), 5);
+  eq('code alphabet drops the confusables', ['I', 'L', 'O', 'U'].filter((c) => codes.CODE_ALPHABET.includes(c)), []);
+  eq('code alphabet keeps the rest of A-Z', 'ABCDEFGHJKMNPQRSTVWXYZ'.length, 22);
+  eq('code length', codes.CODE_LENGTH, 6);
+
+  eq('randomCode: length', codes.randomCode().length, 6);
+  eq('randomCode: only alphabet symbols', new RegExp('^[' + codes.CODE_ALPHABET + ']{6}$').test(codes.randomCode()), true);
+  eq('randomCode: zero bits is 000000', codes.randomCode((b) => b.fill(0)), '000000');
+  eq('randomCode: all bits set is ZZZZZZ', codes.randomCode((b) => b.fill(255)), 'ZZZZZZ');
+  eq('randomCode: reads 4 bytes', (() => { let n = 0; codes.randomCode((b) => { n = b.length; b.fill(0); }); return n; })(), 4);
+  // Each character must come from its own 5-bit group. Setting one bit at a time across all
+  // 32 bits of the draw: 30 of them should move exactly one character, and the 2 that are
+  // discarded (the low bits of the last byte) should move nothing. That is the real check on
+  // "unbiased by construction" — a % N draw could never show it.
+  const oneBit = [];
+  for (let i = 0; i < 4; i++) {
+    for (let bit = 0; bit < 8; bit++) {
+      const src = new Uint8Array(4); src[i] = 1 << bit;
+      oneBit.push(codes.randomCode((b) => b.set(src)));
+    }
+  }
+  eq('randomCode: discarded bits change nothing', oneBit.filter((c) => c === '000000').length, 2);
+  eq('randomCode: 30 usable bits, 30 distinct codes', new Set(oneBit.filter((c) => c !== '000000')).size, 30);
+  eq('randomCode: one bit moves exactly one character',
+    oneBit.every((c) => c.split('').filter((ch) => ch !== '0').length <= 1), true);
+  const draw = {}; let loCount = Infinity; let hiCount = 0;
+  for (let i = 0; i < 60000; i++) { const c = codes.randomCode()[0]; draw[c] = (draw[c] || 0) + 1; }
+  Object.keys(draw).forEach((c) => { loCount = Math.min(loCount, draw[c]); hiCount = Math.max(hiCount, draw[c]); });
+  eq('randomCode: every symbol is reachable', Object.keys(draw).length, 32);
+  check('randomCode: roughly uniform', hiCount / loCount < 2.5, `min=${loCount} max=${hiCount}`);
+
+  eq('normalizeCode: folds case and separators', codes.normalizeCode(' 4k2-m9x '), '4K2M9X');
+  eq('normalizeCode: maps the excluded shapes back', codes.normalizeCode('oO0iIl'), '000111');
+  eq('normalizeCode: keeps dots out of the way', codes.normalizeCode('4K2.M9X'), '4K2M9X');
+  eq('isCode: accepts a real one', codes.isCode('4k2m9x'), true);
+  eq('isCode: rejects wrong lengths', [codes.isCode('4K2M9'), codes.isCode('4K2M9XY')], [false, false]);
+  eq('isCode: rejects punctuation', codes.isCode('4K2*9X'), false);
+  eq('isCode: rejects non-ascii', codes.isCode('ÇK2M9X'), false);
+  eq('codeFromAddress: local part only', codes.codeFromAddress('4K2M9X@mail.example.com'), '4K2M9X');
+  eq('codeFromAddress: survives plus addressing', codes.codeFromAddress('probe+4k2m9x@mail.example.com'), '4K2M9X');
+  eq('codeFromAddress: code first, tag second', codes.codeFromAddress('4k2m9x+reply@mail.example.com'), '4K2M9X');
+  eq('codeFromAddress: unknown tag keeps the local part', codes.codeFromAddress('hello@mail.example.com'), 'HE110');
+  // Documented hazard, not an aspiration: folding L->1 and O->0 means an ordinary word can
+  // normalize into a syntactically valid code. `office@` becomes 0FFICE. So a writer must
+  // never store anything for a code it did not issue — check the registry first, or stray
+  // mail to a word-address on the domain will overwrite a live test's record.
+  eq('codeFromAddress: words can look like codes', codes.isCode(codes.codeFromAddress('office@mail.example.com')), true);
+  eq('codeFromAddress: empty input', codes.codeFromAddress(''), '');
 
   // ================= mailcheck-probe/parse.mjs (header forensics) =================
   // Pure logic that decides the shape of the "send us an email" feature, so it is
