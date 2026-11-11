@@ -17,40 +17,73 @@ rejected before a Worker ever sees it — but they say nothing about the header 
 
 ## What it does
 
-Receives mail on a throwaway subdomain, and stores **headers and a SHA-256 of the raw
-message only** — no body, no attachments — in your own KV namespace with a 24 h TTL. The
-message is accepted and dropped: nothing is forwarded to anyone, and nothing is logged.
+Receives mail addressed to a token sub-address on one routing rule, and stores **headers
+and a SHA-256 of the raw message only** — no body, no attachments — in your own KV
+namespace with a 24 h TTL. The message is accepted and dropped: nothing is forwarded to
+anyone, and nothing is logged.
+
+## Why one rule is enough
+
+Email Routing supports RFC 5233 subaddressing: with the toggle on, mail to
+`probe+TOKEN@example.com` is matched by the plain `probe@example.com` rule, the `+TOKEN`
+does not affect matching, and it arrives intact in `message.to` where the Worker can read
+it. So a single literal rule hands out unlimited one-shot addresses — no catch-all, no
+rule-per-test, and no re-deploying the Worker to add an address. (A rule for
+`probe+exact@` would take precedence over `probe@`, so specific addresses can still be
+reserved.)
+
+Catch-all, for the record, is apex-only — it is not available on subdomains, and we do not
+need it. Routing rules are capped at 200 per domain and 30 domains per zone, which the
+one-rule design makes irrelevant.
+
+## The constraint that does matter
+
+Email Routing is **zone-level**: enabling it replaces the apex `MX` with Cloudflare's, so
+*all* mail for that domain starts arriving at Cloudflare and anything no rule matches is
+dropped. Do this on a domain that carries no mail you care about.
+
+`sysadminstuff.net` is a poor candidate on its own — its apex publishes a null `MX` and
+`v=spf1 -all` precisely to say "no mail here", and the Overview report checks for that. If
+you want to reuse an existing live domain instead, keep its mail flowing with a catch-all
+→ your real mailbox address (a verified destination) before adding any Worker rules.
+
+Subdomains of a zone are added from the *apex*'s Email Routing **Settings → Subdomains**,
+which requires the apex to be onboarded first — so a parked domain you already have on
+Cloudflare is the fastest route, and no separate zone or NS delegation is involved.
 
 ## Setup (~10 minutes)
-
-Keep the subdomain in its **own zone** so `sysadminstuff.net`'s MX and `v=spf1 -all` stay
-untouched — that null-MX statement is one your own Overview report checks for.
 
 ```sh
 cd mailcheck-probe
 npx wrangler kv namespace create PROBE        # paste the id into wrangler.toml
 npx wrangler secret put PROBE_KEY             # any long random string
-npx wrangler deploy
+npx wrangler deploy                           # deploy BEFORE creating the rule
 ```
 
-Then in the dashboard:
+Then in the dashboard, on the chosen domain:
 
-1. **Add a site** for `mailcheck.<your-root-domain>` (a subdomain as its own zone), and add
-   the NS records Cloudflare gives you to the parent zone.
-2. **Compute → Email Service → Email Routing → Onboard Domain** for it. MX/SPF/DKIM TXT
-   records go into *that* zone, not the apex one.
-3. Turn on the **catch-all rule**, action = *Send to a Worker* → `mailcheck-probe`.
-   Deploy the Worker first — the dashboard only lists Workers that already exist, and a
-   rule with no destination stays disabled.
-4. Wait for the MX to resolve: `dig MX mailcheck.<your-root-domain>`.
+1. **Compute → Email Service → Email Routing → Onboard Domain.** Cloudflare adds the `MX`
+   and `cf2024-1._domainkey` DKIM records; if the zone has no SPF record it adds one, and
+   if it *does*, add Cloudflare's `include:` by hand.
+2. (Optional, if you want a label rather than the apex) **Settings → Subdomains** → add
+   `mailcheck`. Cloudflare writes that subdomain's records. Everything below then uses
+   `@mailcheck.<domain>`.
+3. **Settings → enable Subaddressing.**
+4. **Routing rules → add rule**: `probe@<domain>` (or `probe@mailcheck.<domain>`), action
+   = *Send to a Worker* → `mailcheck-probe`. Deploy the Worker first — the dashboard only
+   lists Workers that already exist, and a rule with no destination stays disabled.
+5. Wait for the `MX` to resolve: `dig MX <domain>` (or `mailcheck.<domain>`).
 
 ## Run the three tests that matter
 
 | Send from | What it proves |
 |---|---|
-| Gmail (or M365) to `anything@mailcheck.…` | The common case: does a big provider's `Authentication-Results`/`ARC-*` chain reach us? |
-| Direct SMTP from a VPS (`swaks`/`sendmail`) | Whether the **connecting IP** of the last hop is visible — the whole blacklist feature depends on this |
-| A forward (Gmail auto-forward → us) | Whether forwarding rewrites the chain, i.e. what we'd be lying about |
+| Gmail (or M365) to `probe+aaaa1111@…` | The common case: does a big provider's `Authentication-Results`/`ARC-*` chain reach us? |
+| Direct SMTP from a VPS (`swaks`/`sendmail`) to `probe+bbbb2222@…` | Whether the **connecting IP** of the last hop is visible — the whole blacklist feature depends on this |
+| A forward (Gmail auto-forward → `probe+cccc3333@…`) | Whether forwarding rewrites the chain, i.e. what we'd be lying about |
+
+Distinct tokens matter: each one is a separate KV key, so the three results do not
+overwrite each other. Read them individually with `&to=aaaa1111`.
 
 Read the results:
 
@@ -97,5 +130,8 @@ reason this Worker does exactly one hash and nothing else.
 ```sh
 npx wrangler delete --name mailcheck-probe
 ```
-Disable the catch-all rule first, then delete the zone. KV entries expire on their own
-within 24 h.
+Delete the routing rule first (a rule pointing at a missing Worker is a silent black hole),
+then undo the domain: if you onboarded it only for this, remove it from Email Routing and
+restore its `MX` — leaving Cloudflare's `MX` in place means mail to that domain stops
+delivering. Delete the zone only if you created one. KV entries expire on their own within
+24 h.

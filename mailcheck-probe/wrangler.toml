@@ -14,3 +14,12 @@ binding = "PROBE"
 id = "REPLACE_WITH_ID"
 
 # PROBE_KEY is a secret, kept out of this file:  wrangler secret put PROBE_KEY
+
+# Optional shortcut: create the routing rule at deploy time instead of in the dashboard
+# (needs Wrangler >= 4.113). The address must sit on a domain already onboarded to Email
+# Routing, and Subaddressing must be enabled in that domain's settings so that
+# probe+<token>@… is matched by the plain probe@… rule.
+#
+# Careful: wrangler replaces this entire list on every deploy, so it is a good fit for a
+# throwaway probe and a poor one for a growing product — use the routing-rules API there.
+# addresses = ["probe@mailcheck.example.com"]
